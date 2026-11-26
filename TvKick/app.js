@@ -51,11 +51,9 @@
   var activeDialog = null;
   var dialogOpener = null;
   var searchCategoryOrigin = null;
-  var searchRevision = 0;
+  var searchRequests = null;
   var selectedCategory = null;
   var returnCategory = null;
-  var query = '';
-  var categoryLink = false;
   var searchTimer = null;
   var trendingCategories = [];
   var catalogCategories = [];
@@ -111,10 +109,7 @@
   }
 
   function closeDialog(restoreFocus) {
-    if (activeDialog === searchDialog) {
-      window.clearTimeout(searchTimer);
-      searchRevision += 1;
-    }
+    if (activeDialog === searchDialog) { cancelSearch(); }
     activeDialog.hidden = true;
     activeDialog = null;
     browser.querySelector('.masthead').removeAttribute('aria-hidden');
@@ -127,6 +122,8 @@
     var isFavorites = selectedTab === 'favorites' && !selectedCategory;
     var isHome = selectedTab === 'live' && !selectedCategory;
     var isCategories = selectedTab === 'categories' && !selectedCategory;
+    var trendingShelf = null;
+    var previewCategory = null;
     var previous = document.activeElement;
     if (cards.contains(previous) || previous === directoryBack && !selectedCategory) { activeTabButton().focus(); }
     cards.textContent = '';
@@ -146,6 +143,9 @@
 
     function showChannels(channels, limited, unavailable) {
       if (!isCurrentView()) { return; }
+      var focused = document.activeElement;
+      var keepFocusVisible = trendingShelf && trendingShelf.contains(focused) &&
+        focused.getBoundingClientRect().bottom <= window.innerHeight;
       directoryStatus.textContent = unavailable ? 'A Kick não respondeu. Tente novamente.' :
         !channels.length ? (limited ? 'Lista indisponível. Você ainda pode buscar pelo nome do canal.' : 'Nenhum canal disponível nesta lista.') :
         limited ? 'Sugestões do catálogo local.' : '';
@@ -154,16 +154,14 @@
         var featured = live.filter(function (channel) { return Boolean(channel.image); })[0] || live[0];
         if (featured) {
           featuredPreview = makeFeatured(featured);
-          cards.appendChild(featuredPreview.element);
+          cards.insertBefore(featuredPreview.element, trendingShelf);
+          if (previewCategory) { featuredPreview.show(previewCategory, true); }
         }
-        showChannelShelf('Ao vivo em português', live.filter(function (channel) { return channel !== featured; }));
-        directory.categories(function (categories) {
-          if (isCurrentView() && categories.length) {
-            trendingCategories = categories;
-            showCategories(categories, makeShelf('Categorias em alta'));
-          }
-        });
-        showChannelShelf('Explore estes canais', channels.filter(function (channel) { return channel.live !== true; }));
+        showChannelShelf('Ao vivo em português', live.filter(function (channel) { return channel !== featured; }), trendingShelf);
+        showChannelShelf('Explore estes canais', channels.filter(function (channel) { return channel.live !== true; }), trendingShelf);
+        if (keepFocusVisible && focused.getBoundingClientRect().bottom > window.innerHeight) {
+          focused.scrollIntoView(false);
+        }
       } else {
         channels.forEach(function (channel) { cards.appendChild(makeChannelCard(channel)); });
       }
@@ -180,6 +178,7 @@
         button.addEventListener('click', function () { openCategory(category); });
         if (isHome) {
           button.addEventListener('focus', function () {
+            previewCategory = category;
             if (featuredPreview) { featuredPreview.show(category, true); }
           });
         }
@@ -255,6 +254,15 @@
       else { directoryStatus.textContent = 'Abra um canal e escolha Favoritar para salvá-lo aqui.'; }
     } else if (isCategories) {
       showCatalog();
+    } else if (isHome) {
+      directory.livestreams(null, showChannels);
+      directory.categories(function (categories) {
+        if (!isCurrentView() || !categories.length) { return; }
+        trendingCategories = categories;
+        var rail = makeShelf('Categorias em alta');
+        trendingShelf = rail.parentElement;
+        showCategories(categories, rail);
+      });
     } else {
       directory.livestreams(selectedCategory, showChannels);
     }
@@ -336,7 +344,7 @@
     return { element: feature, show: show };
   }
 
-  function makeShelf(label) {
+  function makeShelf(label, before) {
     var shelf = document.createElement('section');
     shelf.className = 'directory-shelf';
     var title = document.createElement('h2');
@@ -351,7 +359,7 @@
     shelf.appendChild(rail);
     shelf.appendChild(makeScrollButton(1));
     rail.addEventListener('scroll', function () { shelf.classList.toggle('is-scrolled', rail.scrollLeft > 1); });
-    cards.appendChild(shelf);
+    cards.insertBefore(shelf, before || null);
     window.requestAnimationFrame(updateShelfControls);
     return rail;
 
@@ -398,9 +406,9 @@
     return grid;
   }
 
-  function showChannelShelf(label, channels) {
+  function showChannelShelf(label, channels, before) {
     if (!channels.length) { return; }
-    var rail = makeShelf(label);
+    var rail = makeShelf(label, before);
     channels.forEach(function (channel) {
       var button = makeChannelCard(channel);
       button.addEventListener('focus', function () {
@@ -731,9 +739,23 @@
     layoutPlayer();
   }
 
-  function renderSearch() {
-    var revision = ++searchRevision;
+  function cancelSearch() {
+    window.clearTimeout(searchTimer);
+    searchTimer = null;
+    if (searchRequests) {
+      var requests = searchRequests;
+      searchRequests = null;
+      requests.abort();
+    }
+  }
+
+  function clearSearchResults() {
+    if (searchResults.contains(document.activeElement)) { keyboard.querySelector('button').focus(); }
     searchResults.textContent = '';
+  }
+
+  function renderSearch(query, categoryLink) {
+    clearSearchResults();
     searchStatus.textContent = query ? 'Buscando…' : 'Digite um canal, uma categoria ou um link da Kick.';
     if (!query) { return; }
 
@@ -754,7 +776,6 @@
     }
 
     function showCategories(categories) {
-      if (revision !== searchRevision) { return; }
       categories.forEach(function (category) {
         if (displayedCategories[category.id] || categoryGroup && categoryGroup.children.length >= 8) { return; }
         displayedCategories[category.id] = true;
@@ -762,12 +783,42 @@
         var button = makeCard(category.name, '', category.image, '', false);
         button.classList.add('category-card');
         button.addEventListener('click', function () {
-          searchCategoryOrigin = { category: selectedCategory, opener: dialogOpener, result: button };
+          searchCategoryOrigin = { category: selectedCategory, opener: dialogOpener, result: button, resume: searchRemote };
           closeDialog(false);
           openCategory(category);
         });
         categoryGroup.appendChild(button);
       });
+    }
+
+    function searchRemote() {
+      if (categoriesDone && channelsDone) { return; }
+      var requests = directory.createSearch();
+      searchRequests = requests;
+
+      if (!categoriesDone) {
+        requests.categories(query, function (categories, unavailable) {
+          if (searchRequests !== requests) { return; }
+          categoriesDone = true;
+          categoryUnavailable = categoryLink && unavailable;
+          showCategories(categories);
+          updateSearchStatus();
+        }, categoryLink);
+      }
+
+      if (!channelsDone) {
+        requests.channels(query, favorites, function (channels, limited, unavailable) {
+          if (searchRequests !== requests) { return; }
+          channelsDone = true;
+          channelsLimited = limited;
+          channelsUnavailable = unavailable;
+          if (channels.length) {
+            var group = makeSearchGroup('Canais', 'search-channel-grid', false);
+            channels.forEach(function (channel) { group.appendChild(makeChannelCard(channel)); });
+          }
+          updateSearchStatus();
+        });
+      }
     }
 
     var knownCategories = catalogCategories.concat(trendingCategories, directory.localCategories);
@@ -776,54 +827,31 @@
       return foldSearch(category.name).replace(/-/g, ' ').indexOf(term) !== -1;
     }));
 
-    directory.searchCategories(query, function (categories, unavailable) {
-      if (revision !== searchRevision) { return; }
-      categoriesDone = true;
-      categoryUnavailable = categoryLink && unavailable;
-      showCategories(categories);
-      updateSearchStatus();
-    }, categoryLink);
-
-    if (categoryLink) { return; }
-
-    directory.search(query, favorites, function (channels, limited, unavailable) {
-      if (revision !== searchRevision) { return; }
-      channelsDone = true;
-      channelsLimited = limited;
-      channelsUnavailable = unavailable;
-      if (channels.length) {
-        var group = makeSearchGroup('Canais', 'search-channel-grid', false);
-        channels.forEach(function (channel) { group.appendChild(makeChannelCard(channel)); });
-      }
-      updateSearchStatus();
-    });
+    searchRemote();
   }
 
   function applySearch() {
-    window.clearTimeout(searchTimer);
+    cancelSearch();
+    var query;
     var link = /^https?:\/\/(?:www\.)?kick\.com\/category\/([^/?#]+)(?:[/?#].*)?$/i.exec(input.value.trim());
-    categoryLink = Boolean(link);
     if (link) {
       try { query = decodeURIComponent(link[1]); }
       catch (error) { query = ''; }
-      renderSearch();
+      renderSearch(query, true);
       return;
     }
-    var value = normalizeChannel(input.value);
-    if (value.length > 80 || value.indexOf('/') !== -1) {
-      query = '';
-      renderSearch();
+    query = normalizeChannel(input.value);
+    if (query.length > 80 || query.indexOf('/') !== -1) {
+      renderSearch('');
       searchStatus.textContent = 'Digite o nome do canal ou um link válido da Kick.';
       return;
     }
-    query = value;
-    renderSearch();
+    renderSearch(query);
   }
 
   function queueSearch() {
-    window.clearTimeout(searchTimer);
-    searchRevision += 1;
-    searchResults.textContent = '';
+    cancelSearch();
+    clearSearchResults();
     searchStatus.textContent = input.value.trim() ? 'Buscando…' : 'Digite o nome do canal ou da categoria.';
     searchTimer = window.setTimeout(applySearch, 380);
   }
@@ -891,7 +919,13 @@
       searchCategoryOrigin = null;
       selectedCategory = origin.category;
       renderDirectory();
-      showDialog(searchDialog, origin.opener, origin.result);
+      if (searchResults.contains(origin.result)) {
+        showDialog(searchDialog, origin.opener, origin.result);
+        origin.resume();
+      } else {
+        showDialog(searchDialog, origin.opener, keyboard.querySelector('button'));
+        applySearch();
+      }
     }
     else if (selectedCategory) {
       returnCategory = selectedCategory.id;
@@ -905,7 +939,7 @@
 
   function moveFocus(target, direction) {
     if (direction === 40 && navigation.contains(target)) {
-      var entry = cards.querySelector('button');
+      var entry = cards.querySelector('.featured-action, .card, .catalog-more button');
       if (entry) { entry.focus(); return; }
     }
     if (direction === 38 && target.classList.contains('featured-action')) {
@@ -933,12 +967,39 @@
     var x = bounds.left + bounds.width / 2;
     var y = bounds.top + bounds.height / 2;
     var root = viewer.hidden ? (activeDialog || browser) : viewer;
-    var controls = root.querySelectorAll('a[href], button, input');
+    var inCatalog = root === browser && targetRail === cards && cards.getAttribute('data-view') === 'categories' &&
+      target.classList.contains('category-card');
+    var controls = root.querySelectorAll(inCatalog ? 'a[href], button:not(.category-card), input' : 'a[href], button, input');
     var next = null;
     var bestScore = Infinity;
     Array.prototype.forEach.call(controls, function (control) {
       if (control === target || control.disabled || !control.offsetWidth) { return; }
-      var rect = control.getBoundingClientRect();
+      scoreControl(control, control.getBoundingClientRect());
+    });
+    if (inCatalog) {
+      // Flex rows have aligned edges apart from the focus and hover translations.
+      var translation = parseFloat(window.getComputedStyle(document.documentElement).fontSize) / 4;
+      scanCatalog(-1, 'previousElementSibling');
+      scanCatalog(1, 'nextElementSibling');
+    }
+    if (!next && direction === 39 && keyboard.contains(target)) {
+      next = searchResults.querySelector('button');
+    }
+    if (next) { next.focus(); }
+
+    function scanCatalog(step, sibling) {
+      for (var card = target[sibling]; card && card.classList.contains('category-card'); card = card[sibling]) {
+        if (!card.offsetWidth) { continue; }
+        var rect = card.getBoundingClientRect();
+        var distance = step < 0 ? y - rect.bottom : rect.top - y;
+        // The near edge bounds how close any remaining card can be to the focused center.
+        var limit = horizontal ? bounds.height / 3 : step === sign ? bestScore : 0;
+        if (distance > limit + translation) { break; }
+        if (!card.disabled) { scoreControl(card, rect); }
+      }
+    }
+
+    function scoreControl(control, rect) {
       var dx = rect.left + rect.width / 2 - x;
       var dy = rect.top + rect.height / 2 - y;
       var rail = control.parentElement;
@@ -951,12 +1012,13 @@
       if (forward <= 4 || horizontal && sideways > Math.max(bounds.height, rect.height) / 3) { return; }
       if (!horizontal && y >= rect.top && y <= rect.bottom && rect.top <= bounds.top + 4) { return; }
       var score = forward + sideways * (horizontal ? 4 : 0.6);
-      if (score < bestScore) { next = control; bestScore = score; }
-    });
-    if (!next && direction === 39 && keyboard.contains(target)) {
-      next = searchResults.querySelector('button');
+      var winsTie = inCatalog && score === bestScore && next &&
+        (control.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING);
+      if (score < bestScore || winsTie) {
+        next = control;
+        bestScore = score;
+      }
     }
-    if (next) { next.focus(); }
   }
 
   document.addEventListener('keydown', function (event) {

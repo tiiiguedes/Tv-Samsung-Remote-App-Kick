@@ -10,24 +10,65 @@
 
   localCategories.forEach(function (category) { localById[category.id] = category; });
 
-  function request(url, done) {
+  function request(url, done, cancellations) {
     var xhr = new XMLHttpRequest();
+    var settled = false;
+
+    function settle() {
+      settled = true;
+      if (cancellations) { cancellations.splice(cancellations.indexOf(abort), 1); }
+    }
+
+    function finish(payload, status) {
+      if (settled) { return; }
+      settle();
+      done(payload, status);
+    }
+
+    function abort() {
+      settle();
+      xhr.abort();
+    }
+
+    if (cancellations) { cancellations.push(abort); }
     xhr.onload = function () {
       var payload = null;
       if (xhr.status === 200) {
         try { payload = JSON.parse(xhr.responseText); } catch (error) { /* Invalid JSON. */ }
       }
-      done(payload, xhr.status);
+      finish(payload, xhr.status);
     };
-    xhr.onerror = xhr.ontimeout = function () { done(null, 0); };
+    xhr.onerror = xhr.ontimeout = function () { finish(null, 0); };
     try {
       xhr.open('GET', url);
       xhr.timeout = 5500;
       xhr.setRequestHeader('Accept', 'application/json');
       xhr.send();
     } catch (error) {
-      done(null, 0);
+      finish(null, 0);
     }
+  }
+
+  function createSearch() {
+    var cancellations = [];
+    var cancelled = false;
+
+    function load(url, done) {
+      if (!cancelled) { request(url, done, cancellations); }
+    }
+
+    return {
+      abort: function () {
+        cancelled = true;
+        while (cancellations.length) { cancellations[cancellations.length - 1](); }
+      },
+      channels: function (query, favorites, done) {
+        if (!cancelled) { search(query, favorites, done, load); }
+      },
+      categories: function (query, done, exact) {
+        if (!cancelled) { searchCategories(query, done, exact, load); }
+      }
+    };
   }
 
   function validSlug(value) {
@@ -45,8 +86,8 @@
     };
   }
 
-  function detail(slug, done) {
-    request(kick + '/api/v2/channels/' + encodeURIComponent(slug) + '/info', function (data, status) {
+  function detail(slug, done, load) {
+    load(kick + '/api/v2/channels/' + encodeURIComponent(slug) + '/info', function (data, status) {
       if (!data || !validSlug(data.slug)) {
         done(null, status);
         return;
@@ -67,7 +108,8 @@
     });
   }
 
-  function channelList(slugs, done, keepMissing) {
+  function channelList(slugs, done, keepMissing, load) {
+    var get = load || request;
     var result = [];
     var next = 0;
     var active = 0;
@@ -94,7 +136,7 @@
       while (active < 5 && next < slugs.length) {
         var index = next++;
         active += 1;
-        detail(slugs[index], onChannel.bind(null, index));
+        detail(slugs[index], onChannel.bind(null, index), get);
       }
     }
 
@@ -141,9 +183,10 @@
     });
   }
 
-  function searchCategories(query, done, exact) {
+  function searchCategories(query, done, exact, load) {
+    var get = load || request;
     function findBySlug(slug) {
-      request(kick + '/api/v1/subcategories/' + encodeURIComponent(slug), function (item, status) {
+      get(kick + '/api/v1/subcategories/' + encodeURIComponent(slug), function (item, status) {
         done(categoryEntries([item]), !item && status !== 404);
       });
     }
@@ -157,7 +200,7 @@
     var slug = query.toLowerCase();
     if (slug.normalize) { slug = slug.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
     slug = slug.replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
-    request('https://search.kick.com/api/v1/categories/search?limit=8&query=' + encodeURIComponent(query), function (payload) {
+    get('https://search.kick.com/api/v1/categories/search?limit=8&query=' + encodeURIComponent(query), function (payload) {
       if (payload && Array.isArray(payload.data)) {
         done(categoryEntries(payload.data));
       } else if (/^[a-z0-9_-]{1,80}$/.test(slug)) {
@@ -211,9 +254,10 @@
     });
   }
 
-  function search(query, favorites, done) {
+  function search(query, favorites, done, load) {
     var encoded = encodeURIComponent(query);
-    request('https://search.kick.com/api/v1/channels/search?limit=12&query=' + encoded, function (payload) {
+    var get = load || request;
+    get('https://search.kick.com/api/v1/channels/search?limit=12&query=' + encoded, function (payload) {
       if (payload && Array.isArray(payload.data) && payload.data.length) {
         done(payload.data.filter(function (item) { return item && validSlug(item.slug); }).map(function (item) {
           return channelEntry(item.slug, item.username, item.is_live === true, '', item.profile_picture);
@@ -228,12 +272,12 @@
       if (validSlug(query)) { matches.unshift(query); }
       channelList(matches.slice(0, 12), function (channels, unavailable) {
         done(channels, !payload, unavailable);
-      });
+      }, false, get);
     });
   }
 
   window.tvKickDirectory = {
     categories: categories, livestreams: livestreams, channelList: channelList, search: search,
-    searchCategories: searchCategories, localCategories: localCategories
+    searchCategories: searchCategories, createSearch: createSearch, localCategories: localCategories
   };
 }());
