@@ -17,6 +17,8 @@
 
   var currentChannel = '';
   var player = null;
+  var nativePlayer = null;
+  var playbackRequest = null;
   var loadTimer = null;
   var fullscreen = false;
 
@@ -51,9 +53,24 @@
 
   function clearPlayer() {
     window.clearTimeout(loadTimer);
-    if (player) {
-      screen.removeChild(player);
-      player = null;
+    var surface = player;
+    player = null;
+    if (playbackRequest) {
+      var request = playbackRequest;
+      playbackRequest = null;
+      request.abort();
+    }
+    if (nativePlayer) {
+      var avplay = nativePlayer;
+      nativePlayer = null;
+      try {
+        avplay.close();
+      } catch (closeError) {
+        console.warn('AVPlay:', closeError.name);
+      }
+    }
+    if (surface) {
+      screen.removeChild(surface);
     }
     placeholder.hidden = false;
     expand.disabled = true;
@@ -69,7 +86,133 @@
       return;
     }
 
-    status.textContent = 'Abrindo o player de @' + channel + '…';
+    if (window.webapis && window.webapis.avplay) {
+      requestStream(channel);
+    } else {
+      startEmbed(channel, '');
+    }
+  }
+
+  function requestStream(channel) {
+    status.textContent = 'Buscando a transmissão de @' + channel + '…';
+    var request = new XMLHttpRequest();
+    playbackRequest = request;
+
+    function useEmbed(message) {
+      if (playbackRequest === request) {
+        playbackRequest = null;
+        startEmbed(channel, message);
+      }
+    }
+
+    request.onload = function () {
+      if (playbackRequest !== request) {
+        return;
+      }
+      var response;
+      if (request.status === 200) {
+        try {
+          response = JSON.parse(request.responseText);
+        } catch (parseError) {
+          // An unexpected response can still fall back to the embedded player.
+        }
+      }
+      var url = response && response.data;
+      if (typeof url !== 'string' ||
+          !/^https:\/\/(?:[a-z0-9-]+\.)+playback\.live-video\.net\/[^?#]+\.m3u8(?:\?[^#]*)?$/i.test(url)) {
+        useEmbed('A Kick não disponibilizou a transmissão direta.');
+        return;
+      }
+      playbackRequest = null;
+      startNativePlayer(channel, url);
+    };
+    request.onerror = request.ontimeout = function () {
+      useEmbed('A TV não conseguiu consultar a transmissão direta.');
+    };
+
+    try {
+      request.open('GET', 'https://kick.com/api/v2/channels/' + encodeURIComponent(channel) + '/playback-url');
+      request.timeout = 8000;
+      request.setRequestHeader('Accept', 'application/json');
+      request.send();
+    } catch (requestError) {
+      useEmbed('A TV não conseguiu consultar a transmissão direta.');
+    }
+  }
+
+  function updateNativeDisplay() {
+    if (nativePlayer) {
+      var bounds = player.getBoundingClientRect();
+      var horizontalScale = 1920 / window.innerWidth;
+      var verticalScale = 1080 / window.innerHeight;
+      nativePlayer.setDisplayRect(
+        Math.round(bounds.left * horizontalScale), Math.round(bounds.top * verticalScale),
+        Math.round(bounds.width * horizontalScale), Math.round(bounds.height * verticalScale)
+      );
+    }
+  }
+
+  function startNativePlayer(channel, url) {
+    var surface = document.createElement('object');
+    surface.type = 'application/avplayer';
+    surface.setAttribute('aria-hidden', 'true');
+    surface.tabIndex = -1;
+    var avplay = window.webapis.avplay;
+    player = surface;
+    nativePlayer = avplay;
+    screen.insertBefore(surface, placeholder);
+    placeholder.hidden = true;
+    status.textContent = 'Carregando @' + channel + ' no player da Samsung…';
+
+    function onError(error) {
+      if (player === surface) {
+        console.warn('AVPlay:', error && (error.name || error));
+        clearPlayer();
+        startEmbed(channel, 'O player da Samsung não conseguiu reproduzir a transmissão.');
+      }
+    }
+
+    try {
+      avplay.open(url);
+      avplay.setListener({
+        onerror: onError,
+        oncurrentplaytime: function () {
+          if (player === surface && expand.disabled) {
+            window.clearTimeout(loadTimer);
+            expand.disabled = false;
+            status.textContent = 'Reproduzindo @' + channel + ' no player da Samsung.';
+          }
+        },
+        onstreamcompleted: function () {
+          if (player === surface) {
+            clearPlayer();
+            if (fullscreen) {
+              setFullscreen(false);
+            }
+            status.textContent = 'A transmissão de @' + channel + ' terminou.';
+          }
+        }
+      });
+      updateNativeDisplay();
+      avplay.setDisplayMethod('PLAYER_DISPLAY_MODE_LETTER_BOX');
+      loadTimer = window.setTimeout(function () { onError('Tempo de reprodução esgotado'); }, 12000);
+      avplay.prepareAsync(function () {
+        if (player === surface) {
+          try {
+            avplay.play();
+          } catch (playError) {
+            onError(playError);
+          }
+        }
+      }, onError);
+    } catch (playerError) {
+      onError(playerError);
+    }
+  }
+
+  function startEmbed(channel, nativeMessage) {
+    var prefix = nativeMessage ? nativeMessage + ' ' : '';
+    status.textContent = prefix + 'Abrindo o player web de @' + channel + '…';
     var frame = document.createElement('iframe');
     frame.title = 'Player do Kick para @' + channel;
     frame.tabIndex = -1;
@@ -83,7 +226,7 @@
       window.clearTimeout(loadTimer);
       placeholder.hidden = true;
       expand.disabled = false;
-      status.textContent = '@' + channel + ' no Kick. Se a tela ficar vazia, confira se o canal está ao vivo e recarregue.';
+      status.textContent = prefix + 'Player web de @' + channel + '. Se a tela ficar vazia, confira se o canal está ao vivo e recarregue.';
     });
     frame.addEventListener('error', function () {
       if (player === frame) {
@@ -127,6 +270,7 @@
     fullscreen = value;
     document.body.classList.toggle('fullscreen', value);
     collapse.hidden = !value;
+    updateNativeDisplay();
     if (value) {
       collapse.focus();
     } else {

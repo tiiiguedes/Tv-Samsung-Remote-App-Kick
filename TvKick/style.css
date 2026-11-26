@@ -79,8 +79,8 @@ input::placeholder { color: #c1cbd5; }
   overflow: hidden;
 }
 
-.screen iframe, .placeholder { position: absolute; inset: 0; top: 0; left: 0; width: 100%; height: 100%; }
-.screen iframe { border: none; pointer-events: none; }
+.screen iframe, .screen object, .placeholder { position: absolute; inset: 0; top: 0; left: 0; width: 100%; height: 100%; }
+.screen iframe, .screen object { border: none; pointer-events: none; }
 
 .placeholder {
   display: flex;
