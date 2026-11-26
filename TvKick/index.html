@@ -17,9 +17,9 @@
       <div class="brand"><img src="icon.png" alt="" width="48" height="48">TV Kick</div>
       <nav id="navigation" aria-label="Navegação principal" data-focus-row>
         <button type="button" data-tab="live" aria-current="page">Início</button>
-        <button type="button" data-tab="categories">Categorias</button>
-        <button type="button" data-tab="search">Buscar</button>
+        <button type="button" data-tab="categories">Procurar</button>
         <button type="button" data-tab="favorites">Favoritos</button>
+        <button type="button" data-tab="search">Buscar</button>
       </nav>
     </header>
 
@@ -33,14 +33,16 @@
         <button type="button" id="refresh-directory">Atualizar</button>
       </div>
 
-      <form id="channel-form" data-focus-row hidden>
-        <label class="visually-hidden" for="channel-input">Nome ou link do canal</label>
-        <input id="channel-input" type="text" maxlength="150" placeholder="Nome ou link do canal"
-               autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
-        <button class="primary" type="submit">Buscar canal</button>
-      </form>
-
-      <div id="cards" class="cards" data-focus-grid aria-label="Resultados"></div>
+      <div class="directory-content">
+        <form id="channel-form" data-focus-row hidden>
+          <label class="visually-hidden" for="channel-input">Canal, categoria ou link</label>
+          <input id="channel-input" type="text" maxlength="150" placeholder="Canal, categoria ou link"
+                 autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
+          <div id="search-keyboard" class="search-keyboard" role="group" aria-label="Teclado na tela"></div>
+          <button class="primary" type="submit">Buscar</button>
+        </form>
+        <div id="cards" class="cards" data-focus-grid aria-label="Resultados"></div>
+      </div>
     </main>
   </div>
 
