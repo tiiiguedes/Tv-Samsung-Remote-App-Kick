@@ -31,6 +31,10 @@
   var reload = document.getElementById('reload');
   var expand = document.getElementById('expand');
   var collapse = document.getElementById('collapse');
+  var chat = window.TvKickChat;
+  var chatPanel = document.getElementById('chat-panel');
+  var chatToggle = document.getElementById('chat-toggle');
+  var chatToggleLabel = chatToggle.querySelector('span');
 
   var currentChannel = '';
   var player = null;
@@ -413,6 +417,7 @@
     try { window.localStorage.setItem(lastChannelKey, channel); } catch (error) { /* Playback still works. */ }
     backToDirectory.focus();
     startPlayer(channel);
+    chat.start(channel);
     updateFavoriteButton();
   }
 
@@ -522,15 +527,20 @@
   }
 
   function updateNativeDisplay() {
-    if (nativePlayer) {
-      var bounds = player.getBoundingClientRect();
-      var horizontalScale = 1920 / window.innerWidth;
-      var verticalScale = 1080 / window.innerHeight;
-      nativePlayer.setDisplayRect(
-        Math.round(bounds.left * horizontalScale), Math.round(bounds.top * verticalScale),
-        Math.round(bounds.width * horizontalScale), Math.round(bounds.height * verticalScale)
-      );
-    }
+    if (!nativePlayer || !window.innerWidth || !window.innerHeight) { return; }
+    var bounds = screen.getBoundingClientRect();
+    var horizontalScale = 1920 / window.innerWidth;
+    var verticalScale = 1080 / window.innerHeight;
+    var left = Math.max(0, Math.round(bounds.left * horizontalScale));
+    var top = Math.max(0, Math.round(bounds.top * verticalScale));
+    var right = Math.min(1920, Math.round(bounds.right * horizontalScale));
+    var bottom = Math.min(1080, Math.round(bounds.bottom * verticalScale));
+    if (right > left && bottom > top) { nativePlayer.setDisplayRect(left, top, right - left, bottom - top); }
+  }
+
+  function updatePlayerLayout() {
+    try { updateNativeDisplay(); }
+    catch (error) { console.warn('AVPlay:', error && (error.name || error)); }
   }
 
   function startNativePlayer(channel, url) {
@@ -612,6 +622,7 @@
     frame.addEventListener('error', function () {
       if (player === frame) {
         clearPlayer();
+        if (fullscreen) { setFullscreen(false); }
         status.textContent = 'O player do Kick falhou ao carregar. Selecione Recarregar para tentar de novo.';
       }
     });
@@ -728,11 +739,13 @@
     fullscreen = value;
     document.body.classList.toggle('fullscreen', value);
     collapse.hidden = !value;
-    updateNativeDisplay();
+    updatePlayerLayout();
+    if (!value && !chatPanel.hidden) { chat.scrollToLatest(); }
     (value ? collapse : expand.disabled ? backToDirectory : expand).focus();
   }
 
   function returnToDirectory() {
+    chat.stop();
     clearPlayer();
     currentChannel = '';
     viewer.hidden = true;
@@ -899,10 +912,25 @@
   directoryBack.addEventListener('click', goBack);
   backToDirectory.addEventListener('click', returnToDirectory);
   favorite.addEventListener('click', toggleFavorite);
-  reload.addEventListener('click', function () { startPlayer(currentChannel); });
+  reload.addEventListener('click', function () {
+    startPlayer(currentChannel);
+    chat.retry();
+  });
   expand.addEventListener('click', function () { setFullscreen(true); });
   collapse.addEventListener('click', function () { setFullscreen(false); });
-  window.addEventListener('resize', updateShelfControls);
+  chatToggle.addEventListener('click', function () {
+    var show = chatPanel.hidden;
+    chatPanel.hidden = !show;
+    chatToggleLabel.textContent = show ? 'Ocultar chat' : 'Mostrar chat';
+    chatToggle.setAttribute('aria-expanded', String(show));
+    updatePlayerLayout();
+    if (show) { chat.scrollToLatest(); }
+  });
+  window.addEventListener('resize', function () {
+    updateShelfControls();
+    updatePlayerLayout();
+  });
+  window.addEventListener('online', chat.retry);
 
   try {
     ambientSetting.checked = window.localStorage.getItem('tvkick.ambient') !== 'off';
