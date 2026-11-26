@@ -612,9 +612,15 @@
     }
   }
 
-  function updateNativeDisplay() {
+  function layoutPlayer() {
+    if (!player) { return; }
+    var available = screen.getBoundingClientRect();
+    var width = Math.min(available.width, available.height * 16 / 9);
+    player.style.width = width + 'px';
+    player.style.height = (width * 9 / 16) + 'px';
+
     if (!nativePlayer || !window.innerWidth || !window.innerHeight) { return; }
-    var bounds = screen.getBoundingClientRect();
+    var bounds = player.getBoundingClientRect();
     var horizontalScale = 1920 / window.innerWidth;
     var verticalScale = 1080 / window.innerHeight;
     var left = Math.max(0, Math.round(bounds.left * horizontalScale));
@@ -625,7 +631,7 @@
   }
 
   function updatePlayerLayout() {
-    try { updateNativeDisplay(); }
+    try { layoutPlayer(); }
     catch (error) { console.warn('AVPlay:', error && (error.name || error)); }
   }
 
@@ -657,7 +663,7 @@
           if (player === surface && expand.disabled) {
             window.clearTimeout(loadTimer);
             expand.disabled = false;
-            status.textContent = 'Reproduzindo @' + channel + ' no player da Samsung.';
+            status.textContent = '';
             showPlayerControls();
           }
         },
@@ -671,12 +677,13 @@
           }
         }
       });
-      updateNativeDisplay();
+      layoutPlayer();
       avplay.setDisplayMethod('PLAYER_DISPLAY_MODE_LETTER_BOX');
       loadTimer = window.setTimeout(function () { onError('Tempo de reprodução esgotado'); }, 12000);
       avplay.prepareAsync(function () {
         if (player === surface) {
           try {
+            layoutPlayer();
             avplay.play();
           } catch (playError) {
             onError(playError);
@@ -721,6 +728,7 @@
       status.textContent = 'O Kick está demorando para responder. Aguarde ou selecione Recarregar.';
     }, 14000);
     screen.insertBefore(frame, placeholder);
+    layoutPlayer();
   }
 
   function renderSearch() {
