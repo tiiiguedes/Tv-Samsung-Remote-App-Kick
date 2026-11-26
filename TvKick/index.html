@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; frame-src https://player.kick.com; object-src 'none'">
+  <title>TV Kick</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="masthead">
+    <img src="icon.png" alt="" width="48" height="48">
+    <span>TV Kick</span>
+  </header>
+
+  <main class="layout">
+    <section class="controls" aria-labelledby="heading">
+      <h1 id="heading">Assista ao Kick na TV</h1>
+      <form id="channel-form" novalidate>
+        <label for="channel-input">Canal</label>
+        <button id="edit" class="channel-field" type="button" aria-label="Digitar nome do canal">Nome do canal</button>
+        <input id="channel-input" class="channel-field" type="text" maxlength="64"
+               placeholder="Nome do canal" autocomplete="off" autocapitalize="off" spellcheck="false" hidden>
+        <p id="validation" class="error" role="alert" hidden></p>
+        <button id="watch" class="primary" type="submit">Assistir</button>
+      </form>
+    </section>
+
+    <section class="viewer" aria-label="Player do Kick">
+      <div id="screen" class="screen">
+        <div id="placeholder" class="placeholder" aria-hidden="true">
+          <div class="play-symbol"></div>
+        </div>
+      </div>
+      <div class="viewer-footer">
+        <p id="status" role="status" aria-live="polite">Digite o nome de um canal no Kick.</p>
+        <div class="actions">
+          <button type="button" id="reload" disabled>Recarregar</button>
+          <button type="button" id="expand" disabled>Tela cheia</button>
+        </div>
+      </div>
+    </section>
+
+    <button id="collapse" class="exit-fullscreen" type="button" hidden>Sair da tela cheia</button>
+  </main>
+
+  <footer class="remote-guide" aria-label="Controles">
+    <span><kbd>← ↑ ↓ →</kbd> Navegar</span>
+    <span><kbd>OK</kbd> Selecionar</span>
+    <span><kbd>Voltar</kbd> Retornar</span>
+  </footer>
+</body>
+</html>

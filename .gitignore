@@ -1,0 +1,11 @@
+.kick-install/
+bin/
+obj/
+.vs/
+dist/
+*.exe
+*.wgt
+*.patch
+*.p12
+*.pfx
+*.user
