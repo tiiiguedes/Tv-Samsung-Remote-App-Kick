@@ -4,6 +4,11 @@
   var kick = 'https://kick.com';
   var web = 'https://web.kick.com';
   var catalog = window.tvKickCatalog;
+  var localCategories = catalog.categories.concat(catalog.games);
+  var categoryPageSize = 32;
+  var localById = Object.create(null);
+
+  localCategories.forEach(function (category) { localById[category.id] = category; });
 
   function request(url, done) {
     var xhr = new XMLHttpRequest();
@@ -96,42 +101,113 @@
     if (slugs.length) { loadNext(); } else { done([], false); }
   }
 
-  function categories(done) {
-    request(kick + '/api/v1/categories/top', function (payload) {
-      if (!Array.isArray(payload)) { done(catalog.categories, true); return; }
-      done(payload.filter(function (item) {
-        return item && typeof item.id === 'number' && typeof item.name === 'string';
-      }).map(function (item) {
-        var cached = catalog.categories.filter(function (entry) { return entry.id === item.id; })[0];
-        return { id: item.id, name: item.name, image: urlForImage(item.banner && item.banner.src),
-          viewers: typeof item.viewers === 'number' ? item.viewers : null,
-          channels: cached ? cached.channels : [] };
-      }), false);
+  function categoryEntries(items) {
+    var seen = Object.create(null);
+    return items.filter(function (item) {
+      if (!item || typeof item.id !== 'number' || item.id <= 0 || typeof item.name !== 'string' ||
+          !item.name.trim() || seen[item.id]) { return false; }
+      seen[item.id] = true;
+      return true;
+    }).map(function (item) {
+      var cached = localById[item.id];
+      var art = item.banner || item.thumbnail;
+      return {
+        id: item.id, name: item.name.trim(), slug: item.slug || (cached ? cached.slug : ''),
+        image: urlForImage(art && art.src) || (cached ? cached.image : ''),
+        viewers: typeof item.viewers === 'number' ? item.viewers : null,
+        channels: cached ? cached.channels : []
+      };
+    });
+  }
+
+  function categories(done, page) {
+    if (!page) {
+      request(kick + '/api/v1/categories/top', function (payload) {
+        var entries = Array.isArray(payload) ? categoryEntries(payload) : [];
+        done(entries.length ? entries : catalog.categories, !entries.length);
+      });
+      return;
+    }
+
+    request(kick + '/api/v1/subcategories?limit=' + categoryPageSize + '&page=' + page, function (payload) {
+      if (payload && Array.isArray(payload.data)) {
+        var entries = categoryEntries(payload.data);
+        if (entries.length || page > 1) {
+          done(entries, false, Number(payload.current_page) < Number(payload.last_page));
+          return;
+        }
+      }
+      done(page === 1 ? localCategories : [], true, page > 1);
+    });
+  }
+
+  function searchCategories(query, done, exact) {
+    function findBySlug(slug) {
+      request(kick + '/api/v1/subcategories/' + encodeURIComponent(slug), function (item, status) {
+        done(categoryEntries([item]), !item && status !== 404);
+      });
+    }
+
+    if (exact) {
+      if (query && query.length <= 150 && !/[\/\\\u0000-\u001f]/.test(query)) { findBySlug(query); }
+      else { done([]); }
+      return;
+    }
+
+    var slug = query.toLowerCase();
+    if (slug.normalize) { slug = slug.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
+    slug = slug.replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+    request('https://search.kick.com/api/v1/categories/search?limit=8&query=' + encodeURIComponent(query), function (payload) {
+      if (payload && Array.isArray(payload.data)) {
+        done(categoryEntries(payload.data));
+      } else if (/^[a-z0-9_-]{1,80}$/.test(slug)) {
+        findBySlug(slug);
+      } else {
+        done([]);
+      }
     });
   }
 
   function livestreams(category, done) {
     var filter = category ? 'category_id=' + category.id : 'language=pt';
-    request(web + '/api/v1/livestreams?limit=12&sort=viewer_count_desc&' + filter, function (payload) {
-      var streams = payload && payload.data && payload.data.livestreams;
-      if (!Array.isArray(streams)) {
-        channelList(category ? category.channels : catalog.portuguese, function (channels) {
-          done(channels.filter(function (channel) {
-            return !category || !channel.live || channel.categoryIds.indexOf(category.id) !== -1;
-          }), true);
-        });
-        return;
-      }
+
+    function showLocalChannels() {
+      channelList(category ? category.channels : catalog.portuguese, function (channels) {
+        done(channels.filter(function (channel) {
+          return !category || !channel.live || channel.categoryIds.indexOf(category.id) !== -1;
+        }), true);
+      });
+    }
+
+    function showStreams(streams) {
       done(streams.filter(function (item) {
         return item && item.channel && validSlug(item.channel.slug);
       }).map(function (item) {
-        var channel = channelEntry(item.channel.slug, item.channel.username, true, item.title,
+        var user = item.channel.user || {};
+        var primaryCategory = item.category || (item.categories && item.categories[0]);
+        var channel = channelEntry(item.channel.slug, item.channel.username || user.username, true, item.title || item.session_title,
           item.thumbnail && item.thumbnail.src, item.show_view_count === false ? null : item.viewer_count);
-        channel.avatar = urlForImage(item.channel.profile_pic);
-        channel.category = item.category && item.category.name || '';
+        channel.avatar = urlForImage(item.channel.profile_pic || user.profilepic);
+        channel.category = primaryCategory && primaryCategory.name || '';
         channel.language = item.language || '';
         return channel;
       }), false);
+    }
+
+    request(web + '/api/v1/livestreams?limit=12&sort=viewer_count_desc&' + filter, function (payload) {
+      var streams = payload && payload.data && payload.data.livestreams;
+      if (Array.isArray(streams)) { showStreams(streams); return; }
+      if (!category || !category.slug) { showLocalChannels(); return; }
+
+      request(kick + '/stream/livestreams/all?sort=desc&limit=12&subcategory=' + encodeURIComponent(category.slug), function (result) {
+        if (!result || !Array.isArray(result.data)) { showLocalChannels(); return; }
+        showStreams(result.data.filter(function (item) {
+          // An unrecognized slug can produce an unfiltered list.
+          return item && Array.isArray(item.categories) && item.categories.some(function (entry) {
+            return entry && entry.id === category.id;
+          });
+        }));
+      });
     });
   }
 
@@ -145,7 +221,7 @@
         return;
       }
       var known = favorites.concat(catalog.portuguese);
-      catalog.categories.forEach(function (category) { known = known.concat(category.channels); });
+      localCategories.forEach(function (category) { known = known.concat(category.channels); });
       var matches = known.filter(function (slug, index) {
         return slug.indexOf(query) !== -1 && known.indexOf(slug) === index && slug !== query;
       });
@@ -156,5 +232,8 @@
     });
   }
 
-  window.tvKickDirectory = { categories: categories, livestreams: livestreams, channelList: channelList, search: search };
+  window.tvKickDirectory = {
+    categories: categories, livestreams: livestreams, channelList: channelList, search: search,
+    searchCategories: searchCategories, localCategories: localCategories
+  };
 }());

@@ -78,6 +78,7 @@ h2 { margin: 0; letter-spacing: -.025em; }
 
 .cards { display: flex; flex-wrap: wrap; margin: -.44rem; align-items: stretch; }
 .cards[data-view="home"] { display: block; margin: 0; }
+.catalog-more { flex: 0 0 100%; padding: 1rem .44rem .44rem; text-align: center; }
 #search-results { display: block; flex: 1; min-width: 0; margin: 0; }
 .search-results + .search-results { margin-top: 1.2rem; }
 .search-result-grid { display: flex; flex-wrap: wrap; align-items: stretch; margin: .18rem -.44rem 0; }
@@ -247,6 +248,7 @@ h1, h2, h3 { font-family: "Space Grotesk", "DM Sans", sans-serif; }
 .fullscreen .player-heading, .fullscreen .player-bottom, .fullscreen .chat-panel { display: none; }
 .exit-fullscreen { position: fixed; z-index: 2; top: 1.25rem; right: 1.4rem; }
 .exit-fullscreen:focus { box-shadow: 0 0 0 .16rem #030507; }
+.viewer.controls-hidden .player-heading, .viewer.controls-hidden .player-bottom, .viewer.controls-hidden .exit-fullscreen { display: none; }
 @media (max-width: 760px) {
   .actions button { padding: .5rem; }
   .chat-panel { min-width: 11rem; flex-basis: 30%; }

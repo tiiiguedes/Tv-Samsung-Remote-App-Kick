@@ -3,6 +3,7 @@
 
   var playerOrigin = 'https://player.kick.com';
   var lastChannelKey = 'tvkick.lastChannel';
+  var playerControlsDelay = 5000;
   var form = document.getElementById('channel-form');
   var input = document.getElementById('channel-input');
   var keyboard = document.getElementById('search-keyboard');
@@ -42,6 +43,9 @@
   var playbackRequest = null;
   var loadTimer = null;
   var fullscreen = false;
+  var playerControlsTimer = null;
+  var playerControlsFocus = null;
+  var playerControlsWakeKey = 0;
 
   var selectedTab = 'live';
   var activeDialog = null;
@@ -51,8 +55,12 @@
   var selectedCategory = null;
   var returnCategory = null;
   var query = '';
+  var categoryLink = false;
   var searchTimer = null;
-  var knownCategories = null;
+  var trendingCategories = [];
+  var catalogCategories = [];
+  var catalogNextPage = 1;
+  var catalogLimited = false;
   var featuredPreview = null;
   var viewRevision = 0;
   var returnFocus = null;
@@ -151,7 +159,7 @@
         showChannelShelf('Ao vivo em português', live.filter(function (channel) { return channel !== featured; }));
         directory.categories(function (categories) {
           if (isCurrentView() && categories.length) {
-            knownCategories = categories;
+            trendingCategories = categories;
             showCategories(categories, makeShelf('Categorias em alta'));
           }
         });
@@ -161,8 +169,9 @@
       }
     }
 
-    function showCategories(categories, destination) {
+    function showCategories(categories, destination, before) {
       var restoreFocus = document.activeElement === activeTabButton();
+      var first = null;
       categories.forEach(function (category) {
         var description = category.viewers === null || category.viewers === undefined ? '' :
           category.viewers.toLocaleString('pt-BR') + ' assistindo';
@@ -174,10 +183,69 @@
             if (featuredPreview) { featuredPreview.show(category, true); }
           });
         }
-        destination.appendChild(button);
+        destination.insertBefore(button, before || null);
+        if (!first) { first = button; }
         if (restoreFocus && category.id === returnCategory) { button.focus(); }
       });
       returnCategory = null;
+      return first;
+    }
+
+    function showCatalog() {
+      var moreRow = document.createElement('div');
+      var more = document.createElement('button');
+      var loading = false;
+      moreRow.className = 'catalog-more';
+      more.className = 'secondary-action';
+      more.type = 'button';
+      more.textContent = 'Mais categorias';
+      more.addEventListener('click', loadPage);
+      moreRow.appendChild(more);
+      cards.appendChild(moreRow);
+      moreRow.hidden = catalogNextPage <= 1;
+
+      function loadPage() {
+        if (loading) { return; }
+        var page = catalogNextPage;
+        loading = true;
+        more.setAttribute('aria-disabled', 'true');
+        directoryStatus.textContent = 'Carregando categorias…';
+        directory.categories(function (categories, limited, hasMore) {
+          if (!isCurrentView()) { return; }
+          loading = false;
+          more.removeAttribute('aria-disabled');
+          if (page > 1 && limited) {
+            directoryStatus.textContent = 'Não foi possível carregar mais categorias. Tente novamente.';
+            more.textContent = 'Tentar novamente';
+            return;
+          }
+          var seen = Object.create(null);
+          catalogCategories.forEach(function (category) { seen[category.id] = true; });
+          var additions = categories.filter(function (category) { return !seen[category.id]; });
+          catalogCategories = catalogCategories.concat(additions);
+          catalogNextPage = hasMore ? page + 1 : 0;
+          catalogLimited = limited;
+          var first = showCategories(additions, cards, moreRow);
+          if (document.activeElement === more && !activeDialog && viewer.hidden) {
+            if (first) { first.focus(); }
+            else if (!hasMore) { (moreRow.previousElementSibling || activeTabButton()).focus(); }
+          }
+          moreRow.hidden = !hasMore;
+          more.textContent = 'Mais categorias';
+          showCatalogStatus();
+        }, page);
+      }
+
+      function showCatalogStatus() {
+        directoryStatus.textContent = catalogLimited ? 'Mostrando as categorias do catálogo local.' : '';
+      }
+
+      if (catalogCategories.length) {
+        showCategories(catalogCategories, cards, moreRow);
+        showCatalogStatus();
+      } else {
+        loadPage();
+      }
     }
 
     if (isFavorites) {
@@ -186,12 +254,7 @@
       }, true); }
       else { directoryStatus.textContent = 'Abra um canal e escolha Favoritar para salvá-lo aqui.'; }
     } else if (isCategories) {
-      directory.categories(function (categories, limited) {
-        if (!isCurrentView()) { return; }
-        knownCategories = categories;
-        directoryStatus.textContent = limited ? 'Mostrando as categorias disponíveis.' : '';
-        showCategories(categories, cards);
-      });
+      showCatalog();
     } else {
       directory.livestreams(selectedCategory, showChannels);
     }
@@ -437,6 +500,28 @@
     catch (error) { status.textContent = 'A TV só pôde guardar o favorito até você sair do app.'; }
   }
 
+  function hidePlayerControls() {
+    var focused = document.activeElement;
+    playerControlsFocus = focused !== viewer && viewer.contains(focused) ? focused : null;
+    viewer.focus();
+    viewer.classList.add('controls-hidden');
+  }
+
+  function showPlayerControls() {
+    window.clearTimeout(playerControlsTimer);
+    if (viewer.classList.contains('controls-hidden')) {
+      viewer.classList.remove('controls-hidden');
+      if (!viewer.hidden) {
+        var focused = playerControlsFocus;
+        (fullscreen ? collapse : focused && !focused.disabled ? focused : backToDirectory).focus();
+      }
+      playerControlsFocus = null;
+    }
+    if (!viewer.hidden && !expand.disabled) {
+      playerControlsTimer = window.setTimeout(hidePlayerControls, playerControlsDelay);
+    }
+  }
+
   function clearPlayer() {
     window.clearTimeout(loadTimer);
     var surface = player;
@@ -460,6 +545,7 @@
     }
     placeholder.hidden = false;
     expand.disabled = true;
+    showPlayerControls();
   }
 
   function startPlayer(channel) {
@@ -572,6 +658,7 @@
             window.clearTimeout(loadTimer);
             expand.disabled = false;
             status.textContent = 'Reproduzindo @' + channel + ' no player da Samsung.';
+            showPlayerControls();
           }
         },
         onstreamcompleted: function () {
@@ -618,6 +705,7 @@
       placeholder.hidden = true;
       expand.disabled = false;
       status.textContent = prefix + 'Player web de @' + channel + '. Se a tela ficar vazia, confira se o canal está ao vivo e recarregue.';
+      showPlayerControls();
     });
     frame.addEventListener('error', function () {
       if (player === frame) {
@@ -641,18 +729,28 @@
     searchStatus.textContent = query ? 'Buscando…' : 'Digite um canal, uma categoria ou um link da Kick.';
     if (!query) { return; }
 
-    var term = foldSearch(query);
-    var channelsDone = false;
+    var term = foldSearch(query).replace(/-/g, ' ');
+    var categoryGroup = null;
+    var displayedCategories = Object.create(null);
+    var categoriesDone = false;
+    var categoryUnavailable = false;
+    var channelsDone = categoryLink;
+    var channelsLimited = false;
     var channelsUnavailable = false;
+
+    function updateSearchStatus() {
+      if (!categoriesDone || !channelsDone) { return; }
+      var channelGroup = searchResults.querySelector('.search-channel-grid');
+      searchStatus.textContent = categoryGroup || channelGroup ? (channelsLimited && channelGroup ? 'Busca limitada aos canais disponíveis.' : '') :
+        channelsUnavailable || categoryUnavailable ? 'A Kick não respondeu. Tente novamente.' : 'Nenhum resultado encontrado para esta busca.';
+    }
+
     function showCategories(categories) {
       if (revision !== searchRevision) { return; }
-      knownCategories = categories;
-      var matches = categories.filter(function (category) {
-        return foldSearch(category.name).indexOf(term) !== -1;
-      }).slice(0, 8);
-      if (!matches.length) { return; }
-      var group = makeSearchGroup('Categorias', 'search-category-grid', true);
-      matches.forEach(function (category) {
+      categories.forEach(function (category) {
+        if (displayedCategories[category.id] || categoryGroup && categoryGroup.children.length >= 8) { return; }
+        displayedCategories[category.id] = true;
+        if (!categoryGroup) { categoryGroup = makeSearchGroup('Categorias', 'search-category-grid', true); }
         var button = makeCard(category.name, '', category.image, '', false);
         button.classList.add('category-card');
         button.addEventListener('click', function () {
@@ -660,33 +758,51 @@
           closeDialog(false);
           openCategory(category);
         });
-        group.appendChild(button);
+        categoryGroup.appendChild(button);
       });
-      if (channelsDone && !channelsUnavailable && !searchResults.querySelector('.search-channel-grid')) {
-        searchStatus.textContent = 'Nenhum canal encontrado para esta busca.';
-      }
     }
-    if (knownCategories) { showCategories(knownCategories); }
-    else { directory.categories(showCategories); }
+
+    var knownCategories = catalogCategories.concat(trendingCategories, directory.localCategories);
+    showCategories(knownCategories.filter(function (category) {
+      if (categoryLink && category.slug) { return category.slug.toLowerCase() === query.toLowerCase(); }
+      return foldSearch(category.name).replace(/-/g, ' ').indexOf(term) !== -1;
+    }));
+
+    directory.searchCategories(query, function (categories, unavailable) {
+      if (revision !== searchRevision) { return; }
+      categoriesDone = true;
+      categoryUnavailable = categoryLink && unavailable;
+      showCategories(categories);
+      updateSearchStatus();
+    }, categoryLink);
+
+    if (categoryLink) { return; }
 
     directory.search(query, favorites, function (channels, limited, unavailable) {
       if (revision !== searchRevision) { return; }
       channelsDone = true;
+      channelsLimited = limited;
       channelsUnavailable = unavailable;
-      searchStatus.textContent = unavailable ? 'A Kick não respondeu. Tente novamente.' :
-        !channels.length ? 'Nenhum canal encontrado. Tente o nome exato.' :
-        limited ? 'Busca limitada aos canais disponíveis.' : '';
       if (channels.length) {
         var group = makeSearchGroup('Canais', 'search-channel-grid', false);
         channels.forEach(function (channel) { group.appendChild(makeChannelCard(channel)); });
       }
+      updateSearchStatus();
     });
   }
 
   function applySearch() {
     window.clearTimeout(searchTimer);
+    var link = /^https?:\/\/(?:www\.)?kick\.com\/category\/([^/?#]+)(?:[/?#].*)?$/i.exec(input.value.trim());
+    categoryLink = Boolean(link);
+    if (link) {
+      try { query = decodeURIComponent(link[1]); }
+      catch (error) { query = ''; }
+      renderSearch();
+      return;
+    }
     var value = normalizeChannel(input.value);
-    if (value.length > 80 || /[:/]/.test(value)) {
+    if (value.length > 80 || value.indexOf('/') !== -1) {
       query = '';
       renderSearch();
       searchStatus.textContent = 'Digite o nome do canal ou um link válido da Kick.';
@@ -739,6 +855,7 @@
     fullscreen = value;
     document.body.classList.toggle('fullscreen', value);
     collapse.hidden = !value;
+    showPlayerControls();
     updatePlayerLayout();
     if (!value && !chatPanel.hidden) { chat.scrollToLatest(); }
     (value ? collapse : expand.disabled ? backToDirectory : expand).focus();
@@ -746,9 +863,9 @@
 
   function returnToDirectory() {
     chat.stop();
+    viewer.hidden = true;
     clearPlayer();
     currentChannel = '';
-    viewer.hidden = true;
     browser.hidden = false;
     updateShelfControls();
     if (selectedTab === 'favorites' && favoritesChanged) { renderDirectory(); }
@@ -836,6 +953,15 @@
 
   document.addEventListener('keydown', function (event) {
     var code = event.keyCode;
+    if (!viewer.hidden && (code === 9 || code === 13 || code === 32 || code >= 37 && code <= 40)) {
+      var waking = viewer.classList.contains('controls-hidden');
+      showPlayerControls();
+      if (waking || code === playerControlsWakeKey && event.repeat) {
+        playerControlsWakeKey = code;
+        event.preventDefault();
+        return;
+      }
+    }
     if (code === 65376 && event.target === input) {
       event.preventDefault();
       applySearch();
@@ -864,6 +990,13 @@
         event.preventDefault();
         changeQuery(code === 8 ? 'delete' : event.key);
       }
+    }
+  });
+
+  document.addEventListener('keyup', function (event) {
+    if (event.keyCode === playerControlsWakeKey) {
+      playerControlsWakeKey = 0;
+      event.preventDefault();
     }
   });
 
@@ -908,7 +1041,14 @@
     form.querySelector('[type="submit"]').focus();
   });
   input.addEventListener('input', queueSearch);
-  refresh.addEventListener('click', renderDirectory);
+  refresh.addEventListener('click', function () {
+    if (selectedTab === 'categories' && !selectedCategory) {
+      catalogCategories = [];
+      catalogNextPage = 1;
+      catalogLimited = false;
+    }
+    renderDirectory();
+  });
   directoryBack.addEventListener('click', goBack);
   backToDirectory.addEventListener('click', returnToDirectory);
   favorite.addEventListener('click', toggleFavorite);
@@ -918,6 +1058,8 @@
   });
   expand.addEventListener('click', function () { setFullscreen(true); });
   collapse.addEventListener('click', function () { setFullscreen(false); });
+  viewer.addEventListener('mousemove', showPlayerControls);
+  viewer.addEventListener('click', showPlayerControls);
   chatToggle.addEventListener('click', function () {
     var show = chatPanel.hidden;
     chatPanel.hidden = !show;
