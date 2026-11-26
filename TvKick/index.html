@@ -14,12 +14,21 @@
 <body>
   <div id="browser" data-view="home">
     <header class="masthead">
-      <div class="brand"><img src="icon.png" alt="" width="48" height="48">TV Kick</div>
+      <a class="brand" href="#browser" aria-label="Kick TV, início" data-action="home">
+        <svg class="brand-mark" aria-hidden="true" focusable="false" viewBox="0 0 112 32" fill="currentColor"><path d="M0 2h9v10h4V7h4V2h10v8h-4v4h-4v4h4v4h4v8H17v-5h-4v-5H9v10H0V2zm33 0h10v28H33V2zm16 0h25v9H59v10h15v9H49V2zm31 0h9v10h4V7h4V2h10v8h-4v4h-4v4h4v4h4v8H97v-5h-4v-5h-4v10h-9V2z"></path></svg>
+      </a>
       <nav id="navigation" aria-label="Navegação principal" data-focus-row>
+        <button type="button" data-action="account" aria-haspopup="dialog">Entrar</button>
         <button type="button" data-tab="live" aria-current="page">Início</button>
         <button type="button" data-tab="categories">Procurar</button>
-        <button type="button" data-tab="favorites">Favoritos</button>
-        <button type="button" data-tab="search">Buscar</button>
+        <div class="nav-tools">
+          <button type="button" data-tab="search" aria-label="Buscar" aria-haspopup="dialog">
+            <svg class="nav-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.35-4.35"></path></svg>
+          </button>
+          <button type="button" data-action="settings" aria-label="Configurações" aria-haspopup="dialog">
+            <svg class="nav-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"></path><circle cx="12" cy="12" r="3"></circle></svg>
+          </button>
+        </div>
       </nav>
     </header>
 
@@ -29,21 +38,62 @@
           <h1 id="heading">Início</h1>
           <p id="directory-status" role="status" aria-live="polite"></p>
         </div>
-        <button type="button" id="directory-back" hidden>Voltar às categorias</button>
-        <button type="button" id="refresh-directory">Atualizar</button>
+        <button type="button" id="directory-back" class="secondary-action" hidden>
+          <svg class="nav-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5m7 7-7-7 7-7"></path></svg>
+          <span>Voltar às categorias</span>
+        </button>
+        <button type="button" id="refresh-directory" class="secondary-action">
+          <svg class="nav-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8m0-5v5h-5m5 4a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16m5 0H3v5"></path></svg>
+          Atualizar
+        </button>
       </div>
 
-      <div class="directory-content">
-        <form id="channel-form" data-focus-row hidden>
-          <label class="visually-hidden" for="channel-input">Canal, categoria ou link</label>
-          <input id="channel-input" type="text" maxlength="150" placeholder="Canal, categoria ou link"
-                 autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
-          <div id="search-keyboard" class="search-keyboard" role="group" aria-label="Teclado na tela"></div>
-          <button class="primary" type="submit">Buscar</button>
-        </form>
-        <div id="cards" class="cards" data-focus-grid aria-label="Resultados"></div>
-      </div>
+      <div id="cards" class="cards" data-focus-grid aria-label="Resultados"></div>
     </main>
+
+    <div id="search-dialog" class="dialog-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="search-title">
+      <div class="dialog-panel search-panel">
+        <div class="dialog-heading">
+          <h2 id="search-title">Buscar na Kick TV</h2>
+          <button type="button" id="search-close" data-close-dialog class="dialog-close" aria-label="Fechar busca"><svg class="nav-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 6-12 12M6 6l12 12"></path></svg></button>
+        </div>
+        <p id="search-status" role="status" aria-live="polite"></p>
+        <div class="search-dialog-content">
+          <form id="channel-form" data-focus-row>
+            <label class="visually-hidden" for="channel-input">Canal, categoria ou link</label>
+            <input id="channel-input" type="text" maxlength="150" placeholder="Canal, categoria ou link"
+                   autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
+            <div id="search-keyboard" class="search-keyboard" role="group" aria-label="Teclado na tela"></div>
+            <button class="primary" type="submit">Buscar</button>
+          </form>
+          <div id="search-results" class="cards" data-focus-grid aria-label="Resultados"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="account-dialog" class="dialog-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="account-title">
+      <div class="dialog-panel">
+        <div class="dialog-heading">
+          <h2 id="account-title">Conta</h2>
+          <button type="button" data-close-dialog class="dialog-close" aria-label="Fechar conta"><svg class="nav-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 6-12 12M6 6l12 12"></path></svg></button>
+        </div>
+        <p>O login na Kick não está disponível neste app. Os favoritos ficam salvos nesta TV.</p>
+        <button type="button" class="primary" data-open-favorites>Ir para favoritos</button>
+      </div>
+    </div>
+
+    <div id="settings-dialog" class="dialog-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <div class="dialog-panel">
+        <div class="dialog-heading">
+          <h2 id="settings-title">Configurações</h2>
+          <button type="button" data-close-dialog class="dialog-close" aria-label="Fechar configurações"><svg class="nav-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 6-12 12M6 6l12 12"></path></svg></button>
+        </div>
+        <label class="setting-row" for="ambient-setting">
+          Fundo dinâmico no Início
+          <input type="checkbox" id="ambient-setting" checked>
+        </label>
+      </div>
+    </div>
   </div>
 
   <main id="viewer" class="viewer" aria-label="Player do Kick" hidden>
@@ -53,17 +103,20 @@
         <h1 id="playing-channel"></h1>
       </div>
       <div class="actions" data-focus-row>
-        <button type="button" id="back-to-directory">Voltar</button>
-        <button type="button" id="favorite" aria-pressed="false">Favoritar</button>
-        <button type="button" id="reload" disabled>Recarregar</button>
-        <button type="button" id="expand" disabled>Tela cheia</button>
+        <button type="button" id="back-to-directory" class="secondary-action player-back">
+          <svg class="nav-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5m7 7-7-7 7-7"></path></svg>
+          Voltar
+        </button>
+        <button type="button" id="favorite" class="secondary-action" aria-pressed="false">Favoritar</button>
+        <button type="button" id="reload" class="secondary-action" disabled>Recarregar</button>
+        <button type="button" id="expand" class="secondary-action" disabled>Tela cheia</button>
       </div>
     </header>
     <div id="screen" class="screen">
       <div id="placeholder" class="placeholder" aria-hidden="true"><div class="play-symbol"></div></div>
     </div>
     <p id="status" role="status" aria-live="polite"></p>
-    <button id="collapse" class="exit-fullscreen" type="button" hidden>Sair da tela cheia</button>
+    <button id="collapse" class="secondary-action exit-fullscreen" type="button" hidden>Sair da tela cheia</button>
   </main>
 </body>
 </html>

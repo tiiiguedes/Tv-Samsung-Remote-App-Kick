@@ -51,6 +51,10 @@
       var thumbnail = live && live.thumbnail;
       var channel = channelEntry(data.slug, user.username, Boolean(live && live.is_live), live && live.session_title,
         thumbnail && thumbnail.url || user.profile_pic, live && live.show_view_count !== false ? live.viewer_count : null);
+      channel.avatar = urlForImage(user.profile_pic);
+      var primaryCategory = live && live.categories && live.categories[0];
+      channel.category = primaryCategory && primaryCategory.name || '';
+      channel.language = live && live.language || '';
       channel.categoryIds = live && Array.isArray(live.categories) ? live.categories.map(function (category) {
         return category.id;
       }) : [];
@@ -121,8 +125,12 @@
       done(streams.filter(function (item) {
         return item && item.channel && validSlug(item.channel.slug);
       }).map(function (item) {
-        return channelEntry(item.channel.slug, item.channel.username, true, item.title,
+        var channel = channelEntry(item.channel.slug, item.channel.username, true, item.title,
           item.thumbnail && item.thumbnail.src, item.show_view_count === false ? null : item.viewer_count);
+        channel.avatar = urlForImage(item.channel.profile_pic);
+        channel.category = item.category && item.category.name || '';
+        channel.language = item.language || '';
+        return channel;
       }), false);
     });
   }

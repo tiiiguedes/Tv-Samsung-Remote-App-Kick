@@ -6,6 +6,12 @@
   var form = document.getElementById('channel-form');
   var input = document.getElementById('channel-input');
   var keyboard = document.getElementById('search-keyboard');
+  var searchDialog = document.getElementById('search-dialog');
+  var searchResults = document.getElementById('search-results');
+  var searchStatus = document.getElementById('search-status');
+  var accountDialog = document.getElementById('account-dialog');
+  var settingsDialog = document.getElementById('settings-dialog');
+  var ambientSetting = document.getElementById('ambient-setting');
   var browser = document.getElementById('browser');
   var viewer = document.getElementById('viewer');
   var navigation = document.getElementById('navigation');
@@ -34,7 +40,10 @@
   var fullscreen = false;
 
   var selectedTab = 'live';
-  var beforeSearch = { tab: 'live', category: null };
+  var activeDialog = null;
+  var dialogOpener = null;
+  var searchCategoryOrigin = null;
+  var searchRevision = 0;
   var selectedCategory = null;
   var returnCategory = null;
   var query = '';
@@ -64,42 +73,60 @@
     return navigation.querySelector('[aria-current="page"]');
   }
 
-  function setTab(tab, category) {
+  function setTab(tab) {
     var buttons = navigation.querySelectorAll('button');
-    window.clearTimeout(searchTimer);
-    if (tab === 'search' && selectedTab !== 'search') {
-      beforeSearch = { tab: selectedTab, category: selectedCategory };
-    }
     selectedTab = tab;
-    selectedCategory = category || null;
+    selectedCategory = null;
     returnCategory = null;
+    searchCategoryOrigin = null;
     Array.prototype.forEach.call(buttons, function (button) {
       button.removeAttribute('aria-current');
-      if (button.getAttribute('data-tab') === tab) { button.setAttribute('aria-current', 'page'); }
+      if (button.getAttribute('data-tab') === tab ||
+          (tab === 'favorites' && button.getAttribute('data-action') === 'account')) {
+        button.setAttribute('aria-current', 'page');
+      }
     });
     renderDirectory();
-    if (tab === 'search') { keyboard.querySelector('button').focus(); }
+  }
+
+  function showDialog(dialog, opener, first) {
+    activeDialog = dialog;
+    dialogOpener = opener;
+    dialog.hidden = false;
+    browser.querySelector('.masthead').setAttribute('aria-hidden', 'true');
+    browser.querySelector('.directory').setAttribute('aria-hidden', 'true');
+    first.focus();
+  }
+
+  function closeDialog(restoreFocus) {
+    if (activeDialog === searchDialog) {
+      window.clearTimeout(searchTimer);
+      searchRevision += 1;
+    }
+    activeDialog.hidden = true;
+    activeDialog = null;
+    browser.querySelector('.masthead').removeAttribute('aria-hidden');
+    browser.querySelector('.directory').removeAttribute('aria-hidden');
+    if (restoreFocus) { (dialogOpener || activeTabButton()).focus(); }
   }
 
   function renderDirectory() {
     var requestView = ++viewRevision;
-    var isSearch = selectedTab === 'search' && !selectedCategory;
-    var isFavorites = selectedTab === 'favorites';
+    var isFavorites = selectedTab === 'favorites' && !selectedCategory;
     var isHome = selectedTab === 'live' && !selectedCategory;
     var isCategories = selectedTab === 'categories' && !selectedCategory;
     var previous = document.activeElement;
     if (cards.contains(previous) || previous === directoryBack && !selectedCategory) { activeTabButton().focus(); }
     cards.textContent = '';
     featuredPreview = null;
-    var view = isSearch ? 'search' : isHome ? 'home' : isCategories ? 'categories' : 'results';
+    var view = isHome ? 'home' : isCategories ? 'categories' : 'results';
     browser.setAttribute('data-view', view);
     cards.setAttribute('data-view', view);
-    form.hidden = !isSearch;
-    directoryBack.hidden = !selectedCategory && !isSearch;
-    directoryBack.textContent = isSearch ? 'Fechar busca' : selectedTab === 'search' ? 'Voltar à busca' : 'Voltar às categorias';
-    refresh.hidden = isSearch || isFavorites && !favorites.length;
+    directoryBack.hidden = !selectedCategory;
+    directoryBack.querySelector('span').textContent = searchCategoryOrigin ? 'Voltar à busca' : 'Voltar ao catálogo';
+    refresh.hidden = isFavorites && !favorites.length;
     heading.textContent = selectedCategory ? selectedCategory.name : {
-      live: 'Início', categories: 'Categorias', search: 'Buscar canais e categorias', favorites: 'Seus favoritos'
+      live: 'Início', categories: 'Categorias', favorites: 'Seus favoritos'
     }[selectedTab];
     directoryStatus.textContent = 'Carregando…';
 
@@ -107,10 +134,9 @@
 
     function showChannels(channels, limited, unavailable) {
       if (!isCurrentView()) { return; }
-      var empty = isSearch ? 'Nenhum canal encontrado. Tente o nome exato.' : 'Nenhum canal disponível nesta lista.';
       directoryStatus.textContent = unavailable ? 'A Kick não respondeu. Tente novamente.' :
-        !channels.length ? (limited && !isSearch ? 'Lista indisponível. Você ainda pode buscar pelo nome do canal.' : empty) :
-        limited ? (isSearch ? 'Busca limitada aos canais disponíveis.' : 'Sugestões do catálogo local.') : '';
+        !channels.length ? (limited ? 'Lista indisponível. Você ainda pode buscar pelo nome do canal.' : 'Nenhum canal disponível nesta lista.') :
+        limited ? 'Sugestões do catálogo local.' : '';
       if (isHome) {
         var live = channels.filter(function (channel) { return channel.live === true; });
         var featured = live.filter(function (channel) { return Boolean(channel.image); })[0] || live[0];
@@ -127,9 +153,7 @@
         });
         showChannelShelf('Explore estes canais', channels.filter(function (channel) { return channel.live !== true; }));
       } else {
-        var destination = isSearch && channels.length ?
-          makeSearchGroup('Canais', 'search-channel-grid', false) : cards;
-        channels.forEach(function (channel) { destination.appendChild(makeChannelCard(channel)); });
+        channels.forEach(function (channel) { cards.appendChild(makeChannelCard(channel)); });
       }
     }
 
@@ -152,40 +176,7 @@
       returnCategory = null;
     }
 
-    if (isSearch) {
-      if (query) {
-        var categoriesFound = false;
-        var waitingChannels = true;
-        var channelsUnavailable = false;
-        function showSearchCategories(categories) {
-          if (!isCurrentView()) { return; }
-          knownCategories = categories;
-          var term = foldSearch(query);
-          var matches = categories.filter(function (category) {
-            return foldSearch(category.name).indexOf(term) !== -1;
-          }).slice(0, 8);
-          categoriesFound = matches.length > 0;
-          if (categoriesFound) {
-            showCategories(matches, makeSearchGroup('Categorias', 'search-category-grid', true));
-            if (!waitingChannels && !channelsUnavailable && !cards.querySelector('.search-channel-grid')) {
-              directoryStatus.textContent = 'Nenhum canal encontrado para esta busca.';
-            }
-          }
-        }
-        if (knownCategories) { showSearchCategories(knownCategories); }
-        else { directory.categories(showSearchCategories); }
-        directory.search(query, favorites, function (channels, limited, unavailable) {
-          if (!isCurrentView()) { return; }
-          waitingChannels = false;
-          channelsUnavailable = unavailable;
-          showChannels(channels, limited, unavailable);
-          if (categoriesFound && !channels.length && !unavailable) {
-            directoryStatus.textContent = 'Nenhum canal encontrado para esta busca.';
-          }
-        });
-      }
-      else { directoryStatus.textContent = 'Digite um canal, uma categoria ou um link da Kick.'; }
-    } else if (isFavorites) {
+    if (isFavorites) {
       if (favorites.length) { directory.channelList(favorites, function (channels, unavailable) {
         showChannels(channels, false, unavailable);
       }, true); }
@@ -228,14 +219,25 @@
     var title = document.createElement('h2');
     title.className = 'featured-title';
     var meta = document.createElement('p');
-    meta.className = 'featured-meta';
+    meta.className = 'featured-category';
+    var actions = document.createElement('div');
+    actions.className = 'featured-actions';
     var action = document.createElement('button');
     action.type = 'button';
     action.className = 'primary featured-action';
+    action.innerHTML = '<svg class="nav-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="currentColor"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 7a2 2 0 0 1 0 3.456l-11.997 7A2 2 0 0 1 5 19z"></path></svg><span></span>';
+    var actionText = action.querySelector('span');
+    var audience = document.createElement('span');
+    audience.className = 'featured-viewers';
+    var language = document.createElement('span');
+    language.className = 'featured-language';
     copy.appendChild(label);
-    copy.appendChild(title);
     copy.appendChild(meta);
-    copy.appendChild(action);
+    copy.appendChild(title);
+    actions.appendChild(action);
+    actions.appendChild(audience);
+    actions.appendChild(language);
+    copy.appendChild(actions);
     feature.appendChild(copy);
     feature.appendChild(art);
 
@@ -252,12 +254,13 @@
       currentIsCategory = isCategory;
       if (!isCategory && item.live === true) { feature.setAttribute('data-live', ''); }
       else { feature.removeAttribute('data-live'); }
-      feature.classList.toggle('featured-category', isCategory);
-      label.textContent = isCategory ? 'Categoria' : item.live === true ? 'Ao vivo agora' : 'Canal';
+      label.textContent = isCategory ? 'Categoria' : item.name;
       title.textContent = item.title || item.name;
       var viewers = typeof item.viewers === 'number' ? item.viewers.toLocaleString('pt-BR') + ' assistindo' : '';
-      meta.textContent = isCategory ? viewers : '@' + item.slug + (viewers ? ' · ' + viewers : '');
-      action.textContent = isCategory ? 'Ver categoria' : item.live === true ? 'Assistir agora' : 'Abrir canal';
+      meta.textContent = isCategory ? '' : item.category || '';
+      audience.textContent = viewers;
+      language.textContent = item.language === 'pt' || item.language === 'Portuguese' ? 'Português' : item.language || '';
+      actionText.textContent = isCategory ? 'Ver categoria' : item.live === true ? 'Assistir agora' : 'Abrir canal';
       art.textContent = '';
       if (item.image) { art.appendChild(makeImage(item.image)); }
     }
@@ -277,9 +280,39 @@
     rail.setAttribute('role', 'group');
     rail.setAttribute('aria-label', label);
     shelf.appendChild(title);
+    shelf.appendChild(makeScrollButton(-1));
     shelf.appendChild(rail);
+    shelf.appendChild(makeScrollButton(1));
+    rail.addEventListener('scroll', function () { shelf.classList.toggle('is-scrolled', rail.scrollLeft > 1); });
     cards.appendChild(shelf);
+    window.requestAnimationFrame(updateShelfControls);
     return rail;
+
+    function makeScrollButton(direction) {
+      var previous = direction < 0;
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'shelf-scroll ' + (previous ? 'previous' : 'next');
+      button.setAttribute('aria-label', 'Rolar ' + label + ' para a ' + (previous ? 'esquerda' : 'direita'));
+      button.innerHTML = '<svg class="nav-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="' +
+        (previous ? 'm15 18-6-6 6-6' : 'm9 18 6-6-6-6') + '"></path></svg>';
+      button.addEventListener('click', function () {
+        var distance = direction * Math.max(360, rail.clientWidth * .72);
+        if ('scrollBehavior' in rail.style && typeof rail.scrollBy === 'function' &&
+            (!window.matchMedia || !window.matchMedia('(prefers-reduced-motion: reduce)').matches)) {
+          rail.scrollBy({ left: distance, behavior: 'smooth' });
+        } else {
+          rail.scrollLeft += distance;
+        }
+      });
+      return button;
+    }
+  }
+
+  function updateShelfControls() {
+    Array.prototype.forEach.call(cards.querySelectorAll('.card-rail'), function (rail) {
+      rail.parentElement.classList.toggle('has-overflow', rail.scrollWidth > rail.clientWidth + 1);
+    });
   }
 
   function makeSearchGroup(label, gridClass, first) {
@@ -294,7 +327,7 @@
     grid.setAttribute('aria-label', label);
     group.appendChild(title);
     group.appendChild(grid);
-    cards.insertBefore(group, first ? cards.firstChild : null);
+    searchResults.insertBefore(group, first ? searchResults.firstChild : null);
     return grid;
   }
 
@@ -311,9 +344,36 @@
   }
 
   function makeChannelCard(channel) {
-    var meta = channel.live === true ? 'Ao vivo' : channel.live === false ? 'Offline' : 'Status indisponível';
-    if (channel.live && channel.viewers !== null) { meta += ' · ' + channel.viewers.toLocaleString('pt-BR') + ' assistindo'; }
-    var button = makeCard(channel.name, channel.title, channel.image, meta, channel.live);
+    var meta = channel.live === true ? (channel.viewers === null ? '' : channel.viewers.toLocaleString('pt-BR') + ' assistindo') :
+      channel.live === false ? 'Offline' : 'Status indisponível';
+    var button = makeCard(channel.title || channel.name, channel.title ? channel.name : '', channel.image, meta, channel.live);
+    button.classList.add('channel-card');
+    var art = button.querySelector('.card-art');
+    if (channel.live === true) {
+      var live = document.createElement('span');
+      live.className = 'card-live';
+      live.textContent = 'Ao vivo';
+      art.appendChild(live);
+    }
+    var identity = document.createElement('span');
+    identity.className = 'card-identity';
+    var avatar = document.createElement('span');
+    avatar.className = 'card-avatar';
+    avatar.setAttribute('aria-hidden', 'true');
+    avatar.textContent = channel.name.slice(0, 2).toUpperCase();
+    if (channel.avatar) { avatar.appendChild(makeImage(channel.avatar)); }
+    var copy = document.createElement('span');
+    copy.className = 'card-copy';
+    while (art.nextSibling) { copy.appendChild(art.nextSibling); }
+    if (channel.category) {
+      var category = document.createElement('span');
+      category.className = 'card-description';
+      category.textContent = channel.category;
+      copy.appendChild(category);
+    }
+    identity.appendChild(avatar);
+    identity.appendChild(copy);
+    button.appendChild(identity);
     button.setAttribute('data-channel', channel.slug);
     button.addEventListener('click', function () { openChannel(channel.slug, button); });
     return button;
@@ -564,24 +624,72 @@
     screen.insertBefore(frame, placeholder);
   }
 
+  function renderSearch() {
+    var revision = ++searchRevision;
+    searchResults.textContent = '';
+    searchStatus.textContent = query ? 'Buscando…' : 'Digite um canal, uma categoria ou um link da Kick.';
+    if (!query) { return; }
+
+    var term = foldSearch(query);
+    var channelsDone = false;
+    var channelsUnavailable = false;
+    function showCategories(categories) {
+      if (revision !== searchRevision) { return; }
+      knownCategories = categories;
+      var matches = categories.filter(function (category) {
+        return foldSearch(category.name).indexOf(term) !== -1;
+      }).slice(0, 8);
+      if (!matches.length) { return; }
+      var group = makeSearchGroup('Categorias', 'search-category-grid', true);
+      matches.forEach(function (category) {
+        var button = makeCard(category.name, '', category.image, '', false);
+        button.classList.add('category-card');
+        button.addEventListener('click', function () {
+          searchCategoryOrigin = { category: selectedCategory, opener: dialogOpener, result: button };
+          closeDialog(false);
+          openCategory(category);
+        });
+        group.appendChild(button);
+      });
+      if (channelsDone && !channelsUnavailable && !searchResults.querySelector('.search-channel-grid')) {
+        searchStatus.textContent = 'Nenhum canal encontrado para esta busca.';
+      }
+    }
+    if (knownCategories) { showCategories(knownCategories); }
+    else { directory.categories(showCategories); }
+
+    directory.search(query, favorites, function (channels, limited, unavailable) {
+      if (revision !== searchRevision) { return; }
+      channelsDone = true;
+      channelsUnavailable = unavailable;
+      searchStatus.textContent = unavailable ? 'A Kick não respondeu. Tente novamente.' :
+        !channels.length ? 'Nenhum canal encontrado. Tente o nome exato.' :
+        limited ? 'Busca limitada aos canais disponíveis.' : '';
+      if (channels.length) {
+        var group = makeSearchGroup('Canais', 'search-channel-grid', false);
+        channels.forEach(function (channel) { group.appendChild(makeChannelCard(channel)); });
+      }
+    });
+  }
+
   function applySearch() {
     window.clearTimeout(searchTimer);
     var value = normalizeChannel(input.value);
     if (value.length > 80 || /[:/]/.test(value)) {
       query = '';
-      renderDirectory();
-      directoryStatus.textContent = 'Digite o nome do canal ou um link válido da Kick.';
+      renderSearch();
+      searchStatus.textContent = 'Digite o nome do canal ou um link válido da Kick.';
       return;
     }
     query = value;
-    renderDirectory();
+    renderSearch();
   }
 
   function queueSearch() {
     window.clearTimeout(searchTimer);
-    viewRevision += 1;
-    cards.textContent = '';
-    directoryStatus.textContent = input.value.trim() ? 'Buscando…' : 'Digite o nome do canal ou da categoria.';
+    searchRevision += 1;
+    searchResults.textContent = '';
+    searchStatus.textContent = input.value.trim() ? 'Buscando…' : 'Digite o nome do canal ou da categoria.';
     searchTimer = window.setTimeout(applySearch, 380);
   }
 
@@ -629,24 +737,29 @@
     currentChannel = '';
     viewer.hidden = true;
     browser.hidden = false;
+    updateShelfControls();
     if (selectedTab === 'favorites' && favoritesChanged) { renderDirectory(); }
     favoritesChanged = false;
-    (returnFocus && cards.contains(returnFocus) ? returnFocus : activeTabButton()).focus();
+    var scope = activeDialog || cards;
+    (returnFocus && scope.contains(returnFocus) ? returnFocus : activeDialog ? keyboard.querySelector('button') : activeTabButton()).focus();
   }
 
   function goBack() {
     if (fullscreen) { setFullscreen(false); }
     else if (!viewer.hidden) { returnToDirectory(); }
-    else if (document.activeElement === input) { keyboard.querySelector('button').focus(); }
+    else if (activeDialog) { closeDialog(true); }
+    else if (searchCategoryOrigin) {
+      var origin = searchCategoryOrigin;
+      searchCategoryOrigin = null;
+      selectedCategory = origin.category;
+      renderDirectory();
+      showDialog(searchDialog, origin.opener, origin.result);
+    }
     else if (selectedCategory) {
       returnCategory = selectedCategory.id;
       selectedCategory = null;
       activeTabButton().focus();
       renderDirectory();
-    }
-    else if (selectedTab === 'search') {
-      setTab(beforeSearch.tab, beforeSearch.category);
-      activeTabButton().focus();
     }
     else if (selectedTab !== 'live') { setTab('live'); activeTabButton().focus(); }
     else if (window.tizen && window.tizen.application) { window.tizen.application.getCurrentApplication().exit(); }
@@ -654,7 +767,7 @@
 
   function moveFocus(target, direction) {
     if (direction === 40 && navigation.contains(target)) {
-      var entry = form.hidden ? cards.querySelector('button') : keyboard.querySelector('button');
+      var entry = cards.querySelector('button');
       if (entry) { entry.focus(); return; }
     }
     if (direction === 38 && target.classList.contains('featured-action')) {
@@ -681,8 +794,8 @@
     var bounds = target.getBoundingClientRect();
     var x = bounds.left + bounds.width / 2;
     var y = bounds.top + bounds.height / 2;
-    var root = viewer.hidden ? browser : viewer;
-    var controls = root.querySelectorAll('button, input');
+    var root = viewer.hidden ? (activeDialog || browser) : viewer;
+    var controls = root.querySelectorAll('a[href], button, input');
     var next = null;
     var bestScore = Infinity;
     Array.prototype.forEach.call(controls, function (control) {
@@ -703,7 +816,7 @@
       if (score < bestScore) { next = control; bestScore = score; }
     });
     if (!next && direction === 39 && keyboard.contains(target)) {
-      next = cards.querySelector('button');
+      next = searchResults.querySelector('button');
     }
     if (next) { next.focus(); }
   }
@@ -714,16 +827,24 @@
       event.preventDefault();
       applySearch();
       form.querySelector('[type="submit"]').focus();
+    } else if (code === 65385 && event.target === input) {
+      event.preventDefault();
+      keyboard.querySelector('button').focus();
     } else if (code === 65385 || code === 10009 || code === 27) {
       event.preventDefault();
       goBack();
     } else if (fullscreen && code === 9) {
       event.preventDefault();
       collapse.focus();
+    } else if (activeDialog && viewer.hidden && code === 9) {
+      event.preventDefault();
+      var controls = activeDialog.querySelectorAll('button:not([disabled]), input:not([disabled])');
+      var index = Array.prototype.indexOf.call(controls, document.activeElement);
+      controls[(index + (event.shiftKey ? -1 : 1) + controls.length) % controls.length].focus();
     } else if (!fullscreen && code >= 37 && code <= 40 && event.target !== input) {
       event.preventDefault();
       moveFocus(event.target, code);
-    } else if (selectedTab === 'search' && !selectedCategory && viewer.hidden && event.target !== input &&
+    } else if (activeDialog === searchDialog && viewer.hidden && event.target !== input &&
         !event.altKey && !event.ctrlKey && !event.metaKey) {
       if (code === 8 || typeof event.key === 'string' && /^[a-z0-9_@/:. -]$/i.test(event.key) &&
           (event.key !== ' ' || !keyboard.contains(event.target))) {
@@ -733,9 +854,40 @@
     }
   });
 
-  navigation.addEventListener('click', function (event) {
-    var tab = event.target.getAttribute('data-tab');
-    if (tab) { setTab(tab); }
+  browser.addEventListener('click', function (event) {
+    var target = event.target;
+    while (target && target !== browser && !target.hasAttribute('data-tab') &&
+           !target.hasAttribute('data-action') && !target.hasAttribute('data-close-dialog') &&
+           !target.hasAttribute('data-open-favorites')) {
+      target = target.parentElement;
+    }
+    if (!target || target === browser) { return; }
+    if (target.hasAttribute('data-close-dialog')) { closeDialog(true); return; }
+    if (target.hasAttribute('data-open-favorites')) {
+      closeDialog(false);
+      setTab('favorites');
+      activeTabButton().focus();
+      return;
+    }
+    var tab = target.getAttribute('data-tab');
+    var action = target.getAttribute('data-action');
+    if (tab === 'search') {
+      showDialog(searchDialog, target, keyboard.querySelector('button'));
+      applySearch();
+    } else if (action === 'account') {
+      showDialog(accountDialog, target, accountDialog.querySelector('[data-open-favorites]'));
+    } else if (action === 'settings') {
+      showDialog(settingsDialog, target, ambientSetting);
+    } else if (tab || action === 'home') {
+      event.preventDefault();
+      setTab(tab || 'live');
+      activeTabButton().focus();
+    }
+  });
+  ambientSetting.addEventListener('change', function () {
+    browser.setAttribute('data-ambient', ambientSetting.checked ? 'on' : 'off');
+    try { window.localStorage.setItem('tvkick.ambient', ambientSetting.checked ? 'on' : 'off'); }
+    catch (error) { /* The preference still applies for this session. */ }
   });
   form.addEventListener('submit', function (event) {
     event.preventDefault();
@@ -750,8 +902,11 @@
   reload.addEventListener('click', function () { startPlayer(currentChannel); });
   expand.addEventListener('click', function () { setFullscreen(true); });
   collapse.addEventListener('click', function () { setFullscreen(false); });
+  window.addEventListener('resize', updateShelfControls);
 
   try {
+    ambientSetting.checked = window.localStorage.getItem('tvkick.ambient') !== 'off';
+    browser.setAttribute('data-ambient', ambientSetting.checked ? 'on' : 'off');
     var saved = window.localStorage.getItem(lastChannelKey) || '';
     input.value = isChannelName(saved) ? saved : '';
     var storedFavorites = JSON.parse(window.localStorage.getItem(favoritesKey) || '[]');
