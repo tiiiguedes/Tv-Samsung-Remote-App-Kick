@@ -8,7 +8,9 @@ Controle para Windows 11 com painel na bandeja do sistema e um aplicativo Tizen 
 2. Abra `dist\ControleSamsung-Fluent.exe`. Mantenha `TvKick.wgt` e a subpasta `.kick-install` junto do executável.
 3. Com o PC e a TV na mesma rede, clique em **Procurar TV**, conecte e autorize o controle na tela da Samsung.
 4. Para instalar o TV Kick, ative o **Modo Desenvolvedor** na TV, informe o IP local do PC e reinicie a TV. No painel do Windows, clique em **Instalar Kick**. Se solicitado, faça login na Samsung no navegador do PC para gerar o certificado.
-5. Clique em **Kick** para abrir o app instalado. Digite o nome do canal e selecione **Assistir**. Use as setas, **OK** e **Voltar** no controle remoto.
+5. Clique em **Kick** para abrir o app instalado. Use as setas, **OK** e **Voltar** no controle remoto. Em **Buscar**, digite o nome do canal ou cole um link da Kick. Durante a reprodução, selecione **Favoritar** para salvar o canal na TV.
+
+A tela **Início** mostra uma transmissão em destaque e fileiras de canais e categorias. Em **Categorias**, escolha uma capa para ver as transmissões daquele assunto. Quando a listagem online fica indisponível, o app oferece sugestões do catálogo local. **Favoritos** guarda os canais neste aparelho.
 
 Na TV, o TV Kick tenta reproduzir a transmissão ao vivo pelo AVPlay da Samsung usando o endereço HLS consultado na Kick. Se a consulta ou a reprodução direta falhar, o app abre o player incorporado da Kick. Para conferir qual player está em uso, veja a mensagem abaixo do vídeo.
 

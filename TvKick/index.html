@@ -3,53 +3,65 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src https://kick.com; media-src https://*.playback.live-video.net; frame-src https://player.kick.com">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src https://kick.com https://web.kick.com https://search.kick.com; img-src 'self' https://files.kick.com https://images.kick.com https://web.kick.com; media-src https://*.playback.live-video.net; frame-src https://player.kick.com">
   <title>TV Kick</title>
   <link rel="stylesheet" href="style.css">
   <script src="$WEBAPIS/webapis/webapis.js" defer></script>
+  <script src="catalog.js" defer></script>
+  <script src="directory.js" defer></script>
   <script src="app.js" defer></script>
 </head>
 <body>
-  <header class="masthead">
-    <img src="icon.png" alt="" width="48" height="48">
-    <span>TV Kick</span>
-  </header>
+  <div id="browser" data-view="home">
+    <header class="masthead">
+      <div class="brand"><img src="icon.png" alt="" width="48" height="48">TV Kick</div>
+      <nav id="navigation" aria-label="Navegação principal" data-focus-row>
+        <button type="button" data-tab="live" aria-current="page">Início</button>
+        <button type="button" data-tab="categories">Categorias</button>
+        <button type="button" data-tab="search">Buscar</button>
+        <button type="button" data-tab="favorites">Favoritos</button>
+      </nav>
+    </header>
 
-  <main class="layout">
-    <section class="controls" aria-labelledby="heading">
-      <h1 id="heading">Assista ao Kick na TV</h1>
-      <form id="channel-form" novalidate>
-        <label for="channel-input">Canal</label>
-        <button id="edit" class="channel-field" type="button" aria-label="Digitar nome do canal">Nome do canal</button>
-        <input id="channel-input" class="channel-field" type="text" maxlength="64"
-               placeholder="Nome do canal" autocomplete="off" autocapitalize="off" spellcheck="false" hidden>
-        <p id="validation" class="error" role="alert" hidden></p>
-        <button id="watch" class="primary" type="submit">Assistir</button>
+    <main class="directory" aria-labelledby="heading">
+      <div class="directory-heading" data-focus-row>
+        <div>
+          <h1 id="heading">Início</h1>
+          <p id="directory-status" role="status" aria-live="polite"></p>
+        </div>
+        <button type="button" id="directory-back" hidden>Voltar às categorias</button>
+        <button type="button" id="refresh-directory">Atualizar</button>
+      </div>
+
+      <form id="channel-form" data-focus-row hidden>
+        <label class="visually-hidden" for="channel-input">Nome ou link do canal</label>
+        <input id="channel-input" type="text" maxlength="150" placeholder="Nome ou link do canal"
+               autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
+        <button class="primary" type="submit">Buscar canal</button>
       </form>
-    </section>
 
-    <section class="viewer" aria-label="Player do Kick">
-      <div id="screen" class="screen">
-        <div id="placeholder" class="placeholder" aria-hidden="true">
-          <div class="play-symbol"></div>
-        </div>
-      </div>
-      <div class="viewer-footer">
-        <p id="status" role="status" aria-live="polite">Digite o nome de um canal no Kick.</p>
-        <div class="actions">
-          <button type="button" id="reload" disabled>Recarregar</button>
-          <button type="button" id="expand" disabled>Tela cheia</button>
-        </div>
-      </div>
-    </section>
+      <div id="cards" class="cards" data-focus-grid aria-label="Resultados"></div>
+    </main>
+  </div>
 
+  <main id="viewer" class="viewer" aria-label="Player do Kick" hidden>
+    <header class="player-heading">
+      <div class="channel-heading">
+        <p>Assistindo</p>
+        <h1 id="playing-channel"></h1>
+      </div>
+      <div class="actions" data-focus-row>
+        <button type="button" id="back-to-directory">Voltar</button>
+        <button type="button" id="favorite" aria-pressed="false">Favoritar</button>
+        <button type="button" id="reload" disabled>Recarregar</button>
+        <button type="button" id="expand" disabled>Tela cheia</button>
+      </div>
+    </header>
+    <div id="screen" class="screen">
+      <div id="placeholder" class="placeholder" aria-hidden="true"><div class="play-symbol"></div></div>
+    </div>
+    <p id="status" role="status" aria-live="polite"></p>
     <button id="collapse" class="exit-fullscreen" type="button" hidden>Sair da tela cheia</button>
   </main>
-
-  <footer class="remote-guide" aria-label="Controles">
-    <span><kbd>← ↑ ↓ →</kbd> Navegar</span>
-    <span><kbd>OK</kbd> Selecionar</span>
-    <span><kbd>Voltar</kbd> Retornar</span>
-  </footer>
 </body>
 </html>

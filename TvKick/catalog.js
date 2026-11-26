@@ -1,0 +1,19 @@
+/* Canais iniciais para quando a listagem online estiver indisponível. */
+window.tvKickCatalog = {
+  portuguese: ["brabox", "axt", "allanstag", "surskity", "yetz", "ayellol", "gaules", "denissnider", "bkinho", "rodil", "miratortatv", "tftoddy"],
+  categories: [
+    {"id": 13155, "name": "Grand Theft Auto VI (GTA)", "image": "https://files.kick.com/images/subcategories/13155/banner/conversion/52ddce2b-7aee-4097-9cf4-7e8de52fa6b7-banner.webp", "channels": ["maherco", "elshater4real", "theburntpeanut", "chanty", "lasapaaaaa", "spreen", "razzgo", "lacobraaa"]},
+    {"id": 15, "name": "Just Chatting", "image": "https://files.kick.com/images/subcategories/15/banner/conversion/5546d68b-e9f9-49f9-a658-9d2ece637064-banner.webp", "channels": ["davooxeneize", "lospollostv", "kinocasinogaming", "tjajianking2222", "hype", "paymoneywubby", "daasuu", "abzou"]},
+    {"id": 8549, "name": "IRL", "image": "https://files.kick.com/images/subcategories/8549/banner/conversion/7cea5198-c89c-438e-a94f-f2ead386829b-banner.webp", "channels": ["yoloaventuras", "3mr", "3li_boltx", "soypan", "ryota0101", "nupe_diamond", "peanutslive", "beroiq"]},
+    {"id": 19698, "name": "Rob Run", "image": "https://files.kick.com/images/subcategories/19698/banner/conversion/8ff729f1-b79f-40fe-91af-092439e2e0c6-banner.webp", "channels": ["sxb", "zeko", "xqc", "coker", "harmfuly", "k1ng", "duendepablo", "cotonete"]},
+    {"id": 8, "name": "Grand Theft Auto V (GTA)", "image": "https://files.kick.com/images/subcategories/8/banner/conversion/dfc3bcf9-6dd1-4f88-bdac-066f17b7d14d-banner.webp", "channels": ["rdjavi", "dasmehdi", "saab", "tjnv", "kuinaza", "kenetgr", "peppo", "grinch"]},
+    {"id": 28, "name": "Slots & Casino", "image": "https://files.kick.com/images/subcategories/28/banner/conversion/f9233069-cfa7-4ae1-9b33-f2b9ca652fef-banner.webp", "channels": ["chillingcrew", "mascoobs", "mizkif", "luisardito", "bykingcl", "rakyz", "yukineta", "funnyhoodvidz"]},
+    {"id": 14353, "name": "EA Sports FC 27", "image": "https://files.kick.com/images/subcategories/14353/banner/conversion/23433e6b-ed8d-4c9b-b39f-0894e278ca1d-banner.webp", "channels": ["absi", "mugiiwraa", "robfortes", "hey_pholl", "danilofariasfut", "jxoosue", "velhaguardafc", "santicap"]},
+    {"id": 10993, "name": "Mafia: The Old Country", "image": "https://files.kick.com/images/subcategories/10993/banner/conversion/coa9dq-banner.webp", "channels": ["g2g"]},
+    {"id": 14374, "name": "World of Warcraft: Forever", "image": "https://files.kick.com/images/subcategories/14374/banner/conversion/3181d56c-9511-4ce5-827c-fcd810302ef4-banner.webp", "channels": ["axt", "yetz", "denissnider", "miratortatv", "dobrodziej", "dspgamingreal", "misstrashes", "flapjackdota"]},
+    {"id": 14, "name": "Dota 2", "image": "https://files.kick.com/images/subcategories/14/banner/conversion/cobfk4-banner.webp", "channels": ["butisito", "icomanche", "payasitazing", "zapatitogaming", "kukudota2", "alitatopson", "julesgamerrr", "eltioclinkzzz"]},
+    {"id": 5, "name": "League of Legends", "image": "https://files.kick.com/images/subcategories/5/banner/conversion/coc99o-banner.webp", "channels": ["rodil", "faturetosl", "grafo", "yulla", "gragolandia", "coscu", "kamikat", "misrravb"]},
+    {"id": 8548, "name": "Chat Roulette", "image": "https://files.kick.com/images/subcategories/8548/banner/conversion/b7127ad3-5054-4348-97c6-6bde0bc67a44-banner.webp", "channels": ["brabox", "tylersherwinmagic", "wallacegamerr", "cuffem247", "dreikon-25", "pipemontanaa", "marheemtinley", "camilabeleenn"]},
+    {"id": 97, "name": "Roblox", "image": "https://files.kick.com/images/subcategories/97/banner/conversion/cociyw-banner.webp", "channels": ["waffletrades", "toebuu", "maplesyrupy", "cevicherooo", "chanellyy", "imlannyap", "stevengomez73", "blackoutvoficial"]}
+  ]
+};

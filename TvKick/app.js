@@ -4,10 +4,20 @@
   var playerOrigin = 'https://player.kick.com';
   var lastChannelKey = 'tvkick.lastChannel';
   var form = document.getElementById('channel-form');
-  var edit = document.getElementById('edit');
   var input = document.getElementById('channel-input');
-  var validation = document.getElementById('validation');
-  var watch = document.getElementById('watch');
+  var browser = document.getElementById('browser');
+  var viewer = document.getElementById('viewer');
+  var navigation = document.getElementById('navigation');
+  var heading = document.getElementById('heading');
+  var directoryStatus = document.getElementById('directory-status');
+  var cards = document.getElementById('cards');
+  var refresh = document.getElementById('refresh-directory');
+  var directoryBack = document.getElementById('directory-back');
+  var playingChannel = document.getElementById('playing-channel');
+  var favorite = document.getElementById('favorite');
+  var backToDirectory = document.getElementById('back-to-directory');
+  var directory = window.tvKickDirectory;
+  var favoritesKey = 'tvkick.favorites';
   var screen = document.getElementById('screen');
   var placeholder = document.getElementById('placeholder');
   var status = document.getElementById('status');
@@ -22,33 +32,244 @@
   var loadTimer = null;
   var fullscreen = false;
 
+  var selectedTab = 'live';
+  var selectedCategory = null;
+  var returnCategory = null;
+  var query = '';
+  var viewRevision = 0;
+  var returnFocus = null;
+  var favorites = [];
+  var favoritesChanged = false;
+
   function normalizeChannel(value) {
-    return value.trim().replace(/^@/, '').toLowerCase();
+    return value.trim().replace(/^https?:\/\/(?:www\.)?kick\.com\/([^/?#]+)(?:[/?#].*)?$/i, '$1')
+      .replace(/^@/, '').toLowerCase();
   }
 
   function isChannelName(value) {
-    return /^[a-z0-9_-]{1,64}$/.test(value);
+    return typeof value === 'string' && /^[a-z0-9_-]{1,64}$/.test(value);
   }
 
-  function updateChannelField() {
-    var value = input.value.trim();
-    edit.textContent = value || 'Nome do canal';
-    edit.classList.toggle('filled', Boolean(value));
-    edit.setAttribute('aria-label', value ? 'Editar canal ' + value : 'Digitar nome do canal');
+  function activeTabButton() {
+    return navigation.querySelector('[aria-current="page"]');
   }
 
-  function editChannel() {
-    validation.hidden = true;
-    edit.hidden = true;
-    input.hidden = false;
-    input.focus();
-    input.select();
+  function setTab(tab) {
+    var buttons = navigation.querySelectorAll('button');
+    selectedTab = tab;
+    selectedCategory = null;
+    returnCategory = null;
+    Array.prototype.forEach.call(buttons, function (button) {
+      button.removeAttribute('aria-current');
+      if (button.getAttribute('data-tab') === tab) { button.setAttribute('aria-current', 'page'); }
+    });
+    renderDirectory();
+    if (tab === 'search') { input.focus(); }
   }
 
-  function closeEditor() {
-    updateChannelField();
-    input.hidden = true;
-    edit.hidden = false;
+  function renderDirectory() {
+    var requestView = ++viewRevision;
+    var isSearch = selectedTab === 'search';
+    var isFavorites = selectedTab === 'favorites';
+    var isHome = selectedTab === 'live' && !selectedCategory;
+    var isCategories = selectedTab === 'categories' && !selectedCategory;
+    var previous = document.activeElement;
+    if (cards.contains(previous) || previous === directoryBack && !selectedCategory) { activeTabButton().focus(); }
+    cards.textContent = '';
+    var view = isHome ? 'home' : isCategories ? 'categories' : 'results';
+    browser.setAttribute('data-view', view);
+    cards.setAttribute('data-view', view);
+    form.hidden = !isSearch;
+    directoryBack.hidden = !selectedCategory;
+    refresh.hidden = isSearch || isFavorites && !favorites.length;
+    heading.textContent = selectedCategory ? selectedCategory.name : {
+      live: 'Início', categories: 'Categorias', search: 'Buscar canais', favorites: 'Seus favoritos'
+    }[selectedTab];
+    directoryStatus.textContent = 'Carregando…';
+
+    function isCurrentView() { return requestView === viewRevision; }
+
+    function showChannels(channels, limited, unavailable) {
+      if (!isCurrentView()) { return; }
+      var empty = isSearch ? 'Nenhum canal encontrado. Tente o nome exato.' : 'Nenhum canal disponível nesta lista.';
+      directoryStatus.textContent = unavailable ? 'A Kick não respondeu. Tente novamente.' :
+        !channels.length ? (limited && !isSearch ? 'Lista indisponível. Você ainda pode buscar pelo nome do canal.' : empty) :
+        limited ? (isSearch ? 'Busca limitada aos canais disponíveis.' : 'Sugestões do catálogo local.') : '';
+      if (isHome) {
+        var live = channels.filter(function (channel) { return channel.live === true; });
+        var featured = live.filter(function (channel) { return Boolean(channel.image); })[0] || live[0];
+        if (featured) { cards.appendChild(makeFeatured(featured)); }
+        showChannelShelf('Ao vivo em português', live.filter(function (channel) { return channel !== featured; }));
+        showChannelShelf('Explore estes canais', channels.filter(function (channel) { return channel.live !== true; }));
+        directory.categories(function (categories) {
+          if (isCurrentView() && categories.length) {
+            showCategories(categories, makeShelf('Categorias em alta'));
+          }
+        });
+      } else {
+        channels.forEach(function (channel) { cards.appendChild(makeChannelCard(channel)); });
+      }
+    }
+
+    function showCategories(categories, destination) {
+      var restoreFocus = document.activeElement === activeTabButton();
+      categories.forEach(function (category) {
+        var description = category.viewers === null || category.viewers === undefined ? '' :
+          category.viewers.toLocaleString('pt-BR') + ' assistindo';
+        var button = makeCard(category.name, description, category.image, '', false);
+        button.classList.add('category-card');
+        button.addEventListener('click', function () {
+          selectedCategory = category;
+          renderDirectory();
+          directoryBack.focus();
+        });
+        destination.appendChild(button);
+        if (restoreFocus && category.id === returnCategory) { button.focus(); }
+      });
+      returnCategory = null;
+    }
+
+    if (isSearch) {
+      if (query) { directory.search(query, favorites, showChannels); }
+      else { directoryStatus.textContent = 'Digite o nome do canal ou cole o link da Kick.'; }
+    } else if (isFavorites) {
+      if (favorites.length) { directory.channelList(favorites, function (channels, unavailable) {
+        showChannels(channels, false, unavailable);
+      }, true); }
+      else { directoryStatus.textContent = 'Abra um canal e escolha Favoritar para salvá-lo aqui.'; }
+    } else if (isCategories) {
+      directory.categories(function (categories, limited) {
+        if (!isCurrentView()) { return; }
+        directoryStatus.textContent = limited ? 'Mostrando as categorias disponíveis.' : '';
+        showCategories(categories, cards);
+      });
+    } else {
+      directory.livestreams(selectedCategory, showChannels);
+    }
+  }
+
+  function makeImage(url) {
+    var image = document.createElement('img');
+    image.alt = '';
+    image.addEventListener('error', function () { image.hidden = true; });
+    image.src = url;
+    return image;
+  }
+
+  function makeFeatured(channel) {
+    var feature = document.createElement('section');
+    feature.className = 'featured';
+    var copy = document.createElement('div');
+    copy.className = 'featured-copy';
+    var label = document.createElement('p');
+    label.className = 'featured-label';
+    label.textContent = 'Ao vivo agora';
+    var title = document.createElement('h2');
+    title.className = 'featured-title';
+    title.textContent = channel.title || channel.name;
+    var meta = document.createElement('p');
+    meta.className = 'featured-meta';
+    meta.textContent = '@' + channel.slug + (channel.viewers === null ? '' :
+      ' · ' + channel.viewers.toLocaleString('pt-BR') + ' assistindo');
+    var action = document.createElement('button');
+    action.type = 'button';
+    action.className = 'primary featured-action';
+    action.textContent = 'Assistir agora';
+    action.addEventListener('click', function () { openChannel(channel.slug, action); });
+    copy.appendChild(label);
+    copy.appendChild(title);
+    copy.appendChild(meta);
+    copy.appendChild(action);
+    var art = document.createElement('div');
+    art.className = 'featured-art';
+    if (channel.image) { art.appendChild(makeImage(channel.image)); }
+    feature.appendChild(copy);
+    feature.appendChild(art);
+    return feature;
+  }
+
+  function makeShelf(label) {
+    var shelf = document.createElement('section');
+    shelf.className = 'directory-shelf';
+    var title = document.createElement('h2');
+    title.className = 'shelf-title';
+    title.textContent = label;
+    var rail = document.createElement('div');
+    rail.className = 'card-rail';
+    rail.setAttribute('role', 'group');
+    rail.setAttribute('aria-label', label);
+    shelf.appendChild(title);
+    shelf.appendChild(rail);
+    cards.appendChild(shelf);
+    return rail;
+  }
+
+  function showChannelShelf(label, channels) {
+    if (!channels.length) { return; }
+    var rail = makeShelf(label);
+    channels.forEach(function (channel) { rail.appendChild(makeChannelCard(channel)); });
+  }
+
+  function makeChannelCard(channel) {
+    var meta = channel.live === true ? 'Ao vivo' : channel.live === false ? 'Offline' : 'Status indisponível';
+    if (channel.live && channel.viewers !== null) { meta += ' · ' + channel.viewers.toLocaleString('pt-BR') + ' assistindo'; }
+    var button = makeCard(channel.name, channel.title, channel.image, meta, channel.live);
+    button.setAttribute('data-channel', channel.slug);
+    button.addEventListener('click', function () { openChannel(channel.slug, button); });
+    return button;
+  }
+
+  function makeCard(label, description, image, meta, isLive) {
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'card';
+    var art = document.createElement('span');
+    art.className = 'card-art';
+    if (image) { art.appendChild(makeImage(image)); }
+    if (meta) {
+      var badge = document.createElement('span');
+      badge.className = isLive ? 'card-meta live' : 'card-meta';
+      badge.textContent = meta;
+      art.appendChild(badge);
+    }
+    var name = document.createElement('strong');
+    name.textContent = label;
+    button.appendChild(art);
+    button.appendChild(name);
+    if (description) {
+      var title = document.createElement('span');
+      title.className = 'card-description';
+      title.textContent = description;
+      button.appendChild(title);
+    }
+    return button;
+  }
+
+  function openChannel(channel, opener) {
+    returnFocus = opener;
+    browser.hidden = true;
+    viewer.hidden = false;
+    playingChannel.textContent = '@' + channel;
+    try { window.localStorage.setItem(lastChannelKey, channel); } catch (error) { /* Playback still works. */ }
+    backToDirectory.focus();
+    startPlayer(channel);
+    updateFavoriteButton();
+  }
+
+  function updateFavoriteButton() {
+    var saved = favorites.indexOf(currentChannel) !== -1;
+    favorite.textContent = saved ? 'Remover favorito' : 'Favoritar';
+    favorite.setAttribute('aria-pressed', String(saved));
+  }
+
+  function toggleFavorite() {
+    var index = favorites.indexOf(currentChannel);
+    if (index === -1) { favorites.unshift(currentChannel); }
+    else { favorites.splice(index, 1); }
+    favoritesChanged = true;
+    updateFavoriteButton();
+    try { window.localStorage.setItem(favoritesKey, JSON.stringify(favorites)); }
+    catch (error) { status.textContent = 'A TV só pôde guardar o favorito até você sair do app.'; }
   }
 
   function clearPlayer() {
@@ -243,27 +464,16 @@
     screen.insertBefore(frame, placeholder);
   }
 
-  function watchChannel() {
-    var channel = normalizeChannel(input.value);
-    if (!isChannelName(channel)) {
-      editChannel();
-      validation.textContent = channel
-        ? 'Digite só o nome do canal. Use letras sem acento, números, hífen ou sublinhado.'
-        : 'Digite o nome do canal para assistir.';
-      validation.hidden = false;
+  function searchChannel() {
+    var value = normalizeChannel(input.value);
+    if (!value || value.length > 80 || /[:/]/.test(value)) {
+      directoryStatus.textContent = 'Digite o nome do canal ou um link válido da Kick.';
+      input.focus();
       return;
     }
-
-    input.value = channel;
-    closeEditor();
-    validation.hidden = true;
-    watch.focus();
-    try {
-      window.localStorage.setItem(lastChannelKey, channel);
-    } catch (storageError) {
-      // Playback is independent of local storage availability.
-    }
-    startPlayer(channel);
+    query = value;
+    form.querySelector('button').focus();
+    renderDirectory();
   }
 
   function setFullscreen(value) {
@@ -271,76 +481,104 @@
     document.body.classList.toggle('fullscreen', value);
     collapse.hidden = !value;
     updateNativeDisplay();
-    if (value) {
-      collapse.focus();
-    } else {
-      (expand.disabled ? watch : expand).focus();
-    }
+    (value ? collapse : expand.disabled ? backToDirectory : expand).focus();
+  }
+
+  function returnToDirectory() {
+    clearPlayer();
+    currentChannel = '';
+    viewer.hidden = true;
+    browser.hidden = false;
+    if (selectedTab === 'favorites' && favoritesChanged) { renderDirectory(); }
+    favoritesChanged = false;
+    (returnFocus && cards.contains(returnFocus) ? returnFocus : activeTabButton()).focus();
   }
 
   function goBack() {
-    if (fullscreen) {
-      setFullscreen(false);
-    } else if (!input.hidden) {
-      closeEditor();
-      edit.focus();
-    } else if (currentChannel) {
-      clearPlayer();
-      currentChannel = '';
-      reload.disabled = true;
-      status.textContent = 'Digite o nome de um canal no Kick.';
-      edit.focus();
-    } else if (window.tizen && window.tizen.application) {
-      window.tizen.application.getCurrentApplication().exit();
+    if (fullscreen) { setFullscreen(false); }
+    else if (!viewer.hidden) { returnToDirectory(); }
+    else if (document.activeElement === input) { form.querySelector('button').focus(); }
+    else if (selectedCategory) {
+      returnCategory = selectedCategory.id;
+      selectedCategory = null;
+      activeTabButton().focus();
+      renderDirectory();
     }
+    else if (selectedTab !== 'live') { setTab('live'); activeTabButton().focus(); }
+    else if (window.tizen && window.tizen.application) { window.tizen.application.getCurrentApplication().exit(); }
   }
 
-  function nextControl(target, direction) {
-    var navigation = {
-      edit: { 39: watch, 40: watch },
-      watch: { 37: edit, 38: edit, 39: reload, 40: reload },
-      reload: { 37: watch, 38: watch, 39: expand },
-      expand: { 37: reload, 38: watch }
-    };
-    return navigation[target.id] && navigation[target.id][direction];
+  function moveFocus(target, direction) {
+    var horizontal = direction === 37 || direction === 39;
+    var sign = direction === 37 || direction === 38 ? -1 : 1;
+    var targetRail = target.parentElement;
+    if (horizontal && targetRail && targetRail.classList.contains('card-rail')) {
+      var sibling = sign < 0 ? target.previousElementSibling : target.nextElementSibling;
+      if (sibling) {
+        sibling.focus();
+        var railBounds = targetRail.getBoundingClientRect();
+        var siblingBounds = sibling.getBoundingClientRect();
+        if (siblingBounds.left < railBounds.left + 8) {
+          targetRail.scrollLeft -= railBounds.left + 8 - siblingBounds.left;
+        } else if (siblingBounds.right > railBounds.right - 8) {
+          targetRail.scrollLeft += siblingBounds.right - railBounds.right + 8;
+        }
+      }
+      return;
+    }
+    var bounds = target.getBoundingClientRect();
+    var x = bounds.left + bounds.width / 2;
+    var y = bounds.top + bounds.height / 2;
+    var root = viewer.hidden ? browser : viewer;
+    var controls = root.querySelectorAll('button, input');
+    var next = null;
+    var bestScore = Infinity;
+    Array.prototype.forEach.call(controls, function (control) {
+      if (control === target || control.disabled || !control.offsetWidth) { return; }
+      var rect = control.getBoundingClientRect();
+      var dx = rect.left + rect.width / 2 - x;
+      var dy = rect.top + rect.height / 2 - y;
+      var rail = control.parentElement;
+      if (rail.classList.contains('card-rail')) {
+        var visible = rail.getBoundingClientRect();
+        if (x + dx < visible.left || x + dx > visible.right) { return; }
+      }
+      var forward = sign * (horizontal ? dx : dy);
+      var sideways = Math.abs(horizontal ? dy : dx);
+      if (forward <= 4 || horizontal && sideways > Math.max(bounds.height, rect.height) / 3) { return; }
+      if (!horizontal && y >= rect.top && y <= rect.bottom && rect.top <= bounds.top + 4) { return; }
+      var score = forward + sideways * (horizontal ? 4 : 0.6);
+      if (score < bestScore) { next = control; bestScore = score; }
+    });
+    if (next) { next.focus(); }
   }
 
   document.addEventListener('keydown', function (event) {
     var code = event.keyCode;
     if (code === 65376 && event.target === input) {
       event.preventDefault();
-      closeEditor();
-      watch.focus();
-      return;
-    }
-
-    if (code === 65385 || code === 10009 || code === 27) {
+      searchChannel();
+    } else if (code === 65385 || code === 10009 || code === 27) {
       event.preventDefault();
       goBack();
-      return;
-    }
-
-    if (fullscreen && code === 9) {
+    } else if (fullscreen && code === 9) {
       event.preventDefault();
       collapse.focus();
-      return;
-    }
-
-    if (code >= 37 && code <= 40 && event.target !== input) {
-      var next = nextControl(event.target, code);
+    } else if (!fullscreen && code >= 37 && code <= 40 && event.target !== input) {
       event.preventDefault();
-      if (next && !next.disabled) {
-        next.focus();
-      }
+      moveFocus(event.target, code);
     }
   });
 
-  input.addEventListener('blur', closeEditor);
-  form.addEventListener('submit', function (event) {
-    event.preventDefault();
-    watchChannel();
+  navigation.addEventListener('click', function (event) {
+    var tab = event.target.getAttribute('data-tab');
+    if (tab) { setTab(tab); }
   });
-  edit.addEventListener('click', editChannel);
+  form.addEventListener('submit', function (event) { event.preventDefault(); searchChannel(); });
+  refresh.addEventListener('click', renderDirectory);
+  directoryBack.addEventListener('click', goBack);
+  backToDirectory.addEventListener('click', returnToDirectory);
+  favorite.addEventListener('click', toggleFavorite);
   reload.addEventListener('click', function () { startPlayer(currentChannel); });
   expand.addEventListener('click', function () { setFullscreen(true); });
   collapse.addEventListener('click', function () { setFullscreen(false); });
@@ -348,9 +586,9 @@
   try {
     var saved = window.localStorage.getItem(lastChannelKey) || '';
     input.value = isChannelName(saved) ? saved : '';
-  } catch (storageError) {
-    // A fresh channel can still be entered when storage is unavailable.
-  }
-  updateChannelField();
-  edit.focus();
+    var storedFavorites = JSON.parse(window.localStorage.getItem(favoritesKey) || '[]');
+    if (Array.isArray(storedFavorites)) { favorites = storedFavorites.filter(isChannelName); }
+  } catch (error) { /* The directory also works without local storage. */ }
+  renderDirectory();
+  activeTabButton().focus();
 }());
